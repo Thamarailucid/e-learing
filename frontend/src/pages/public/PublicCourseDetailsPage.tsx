@@ -49,18 +49,23 @@ export const PublicCourseDetailsPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#fafafa]">
       {/* Header */}
-      <header className="bg-white border-b border-[#e5e5e5] px-6 py-4 sticky top-0 z-30 shadow-sm flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button type="text" icon={<ChevronLeft className="w-4 h-4" />} onClick={() => navigate(-1)}>
+      <header className="bg-white border-b border-[#e5e5e5] px-4 sm:px-6 py-3.5 sticky top-0 z-30 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <Button type="text" size="small" icon={<ChevronLeft className="w-4 h-4" />} onClick={() => navigate(-1)} className="shrink-0 text-xs">
             Back
           </Button>
-          <div className="w-8 h-8 rounded-lg bg-black text-white flex items-center justify-center font-bold">
+          <div className="w-8 h-8 rounded-lg bg-black text-white flex items-center justify-center font-bold shrink-0">
             <GraduationCap className="w-4 h-4" />
           </div>
-          <span className="font-bold text-[#111111]">{course.organization_name}</span>
+          <span className="font-bold text-sm sm:text-base text-[#111111] truncate">{course.organization_name}</span>
         </div>
         {!isLoggedIn && (
-          <Button icon={<LogIn className="w-4 h-4" />} onClick={() => navigate(`/login?orgSlug=${course.organization_slug}&enrollCourseId=${course.id}`)}>
+          <Button
+            size="middle"
+            icon={<LogIn className="w-3.5 h-3.5" />}
+            onClick={() => navigate(`/login?orgSlug=${course.organization_slug}&enrollCourseId=${course.id}`)}
+            className="shrink-0 text-xs sm:text-sm font-medium"
+          >
             Sign In to Enroll
           </Button>
         )}

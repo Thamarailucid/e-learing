@@ -48,53 +48,55 @@ export const AcademyLandingPage: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col bg-[#fafafa]">
       {/* Dynamic Themed Academy Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-30 shadow-sm">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link to="/explore" className="text-gray-400 hover:text-black transition-colors" title="Back to Explore">
+      <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-3.5 sticky top-0 z-30 shadow-xs">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <Link to="/explore" className="text-gray-400 hover:text-black transition-colors shrink-0" title="Back to Explore">
               <ChevronLeft className="w-5 h-5" />
             </Link>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
               {academy.logoUrl ? (
                 <img
                   src={academy.logoUrl}
                   alt={academy.name}
-                  className="h-9 max-w-[160px] object-contain rounded"
+                  className="h-9 max-w-[140px] object-contain rounded shrink-0"
                 />
               ) : (
                 <div
                   style={{ backgroundColor: primaryColor }}
-                  className="w-9 h-9 rounded-xl text-white flex items-center justify-center font-bold text-base shadow"
+                  className="w-9 h-9 rounded-xl text-white flex items-center justify-center font-bold text-base shadow shrink-0"
                 >
                   {academy.name.charAt(0)}
                 </div>
               )}
-              <div>
-                <span className="font-bold text-lg tracking-tight text-[#111111]">{academy.name}</span>
-                <div className="text-[11px] text-gray-500">Official Learning Portal</div>
+              <div className="min-w-0">
+                <span className="font-bold text-base sm:text-lg tracking-tight text-[#111111] truncate block">{academy.name}</span>
+                <div className="text-[11px] text-gray-500 hidden sm:block truncate">Official Learning Portal</div>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 shrink-0">
             {isLoggedIn ? (
               <Button
                 type="primary"
                 style={{ backgroundColor: primaryColor, borderColor: primaryColor }}
                 onClick={() => navigate('/student/dashboard')}
+                className="text-xs sm:text-sm font-medium"
               >
                 Go to Student Portal
               </Button>
             ) : (
               <>
-                <Button onClick={() => navigate('/login')}>
+                <Button onClick={() => navigate('/login')} className="text-xs sm:text-sm font-medium">
                   Sign In
                 </Button>
                 <Button
                   type="primary"
                   style={{ backgroundColor: primaryColor, borderColor: primaryColor }}
                   onClick={() => navigate(`/login?mode=register&orgSlug=${academy.slug}`)}
+                  className="text-xs sm:text-sm font-medium"
                 >
                   Join Academy
                 </Button>

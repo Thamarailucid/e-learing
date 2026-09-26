@@ -31,41 +31,45 @@ export const PublicCatalogPage: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col bg-[#fafafa]">
       {/* Public Navigation Header */}
-      <header className="bg-white border-b border-[#e5e5e5] px-6 py-4 sticky top-0 z-30 shadow-sm">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-black text-white flex items-center justify-center font-bold shadow">
+      <header className="bg-white border-b border-[#e5e5e5] px-4 sm:px-6 py-3.5 sticky top-0 z-30 shadow-xs">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-black text-white flex items-center justify-center font-bold shadow shrink-0">
               <GraduationCap className="w-5 h-5" />
             </div>
-            <div>
-              <span className="font-bold text-lg tracking-tight text-[#111111]">Novacodex Learning Hub</span>
-              <div className="text-[11px] text-gray-500">Multi-Academy Online Course Platform</div>
+            <div className="min-w-0">
+              <span className="font-bold text-base sm:text-lg tracking-tight text-[#111111] truncate block">Novacodex Learning Hub</span>
+              <div className="text-[11px] text-gray-500 hidden sm:block truncate">Multi-Academy Online Course Platform</div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 shrink-0">
             {isLoggedIn ? (
               <Button
                 type="primary"
                 onClick={() => navigate(getDashboardPath())}
                 icon={<ChevronRight className="w-4 h-4" />}
+                className="text-xs sm:text-sm font-medium"
               >
                 Go to My Dashboard
               </Button>
             ) : (
               <>
                 <Button
-                  icon={<LogIn className="w-4 h-4" />}
+                  icon={<LogIn className="w-3.5 h-3.5" />}
                   onClick={() => navigate('/login')}
+                  className="text-xs sm:text-sm font-medium"
                 >
                   Sign In
                 </Button>
                 <Button
                   type="primary"
-                  icon={<UserPlus className="w-4 h-4" />}
+                  icon={<UserPlus className="w-3.5 h-3.5" />}
                   onClick={() => navigate('/login?mode=register')}
+                  className="text-xs sm:text-sm font-medium"
                 >
-                  Create Student Account
+                  <span className="hidden sm:inline">Create Student Account</span>
+                  <span className="sm:hidden">Register</span>
                 </Button>
               </>
             )}
