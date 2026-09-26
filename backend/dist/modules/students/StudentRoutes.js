@@ -1,0 +1,18 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.StudentRoutes = void 0;
+const express_1 = require("express");
+const StudentController_1 = require("./StudentController");
+const AuthenticateRequest_1 = require("../../middleware/AuthenticateRequest");
+const ResolveOrganizationContext_1 = require("../../middleware/ResolveOrganizationContext");
+const AuthorizePermission_1 = require("../../middleware/AuthorizePermission");
+const router = (0, express_1.Router)();
+router.use(AuthenticateRequest_1.AuthenticateRequest, ResolveOrganizationContext_1.ResolveOrganizationContext);
+router.get('/GetStudentList', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'MANAGER', 'INSTRUCTOR'), (req, res, next) => StudentController_1.studentController.GetStudentList(req, res, next));
+router.post('/CreateStudent', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'MANAGER'), (req, res, next) => StudentController_1.studentController.CreateStudent(req, res, next));
+router.put('/UpdateStudentDetails', (0, AuthorizePermission_1.AuthorizePermission)('can_edit_students'), (req, res, next) => StudentController_1.studentController.UpdateStudentDetails(req, res, next));
+router.put('/UpdateStudentDetails/:studentUserId', (0, AuthorizePermission_1.AuthorizePermission)('can_edit_students'), (req, res, next) => StudentController_1.studentController.UpdateStudentDetails(req, res, next));
+router.post('/ResetStudentPassword', (0, AuthorizePermission_1.AuthorizePermission)('can_reset_student_passwords'), (req, res, next) => StudentController_1.studentController.ResetStudentPassword(req, res, next));
+router.post('/ResetStudentPassword/:studentUserId', (0, AuthorizePermission_1.AuthorizePermission)('can_reset_student_passwords'), (req, res, next) => StudentController_1.studentController.ResetStudentPassword(req, res, next));
+router.post('/AssignStudentCourse', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'MANAGER', 'INSTRUCTOR'), (req, res, next) => StudentController_1.studentController.AssignStudentCourse(req, res, next));
+exports.StudentRoutes = router;

@@ -1,0 +1,48 @@
+@import './tokens.css';
+
+/* Global clean transitions and custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Ant Design overrides to match Apple-style minimalist aesthetic */
+.ant-btn-primary {
+  background: var(--novacodex-button-bg) !important;
+  color: var(--novacodex-button-text) !important;
+  border-color: var(--novacodex-button-bg) !important;
+  border-radius: var(--novacodex-radius-sm) !important;
+  box-shadow: none !important;
+}
+
+.ant-btn-primary:hover {
+  opacity: 0.9 !important;
+}
+
+.ant-input,
+.ant-select-selector,
+.ant-input-password {
+  border-radius: var(--novacodex-radius-sm) !important;
+  border-color: var(--novacodex-border) !important;
+}
+
+.ant-card {
+  border-radius: var(--novacodex-radius-md) !important;
+  border-color: var(--novacodex-border) !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05) !important;
+}
+
+.ant-modal-content {
+  border-radius: var(--novacodex-radius-lg) !important;
+  padding: 24px !important;
+}

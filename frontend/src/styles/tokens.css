@@ -1,0 +1,36 @@
+:root {
+  --novacodex-primary: #000000;
+  --novacodex-secondary: #ffffff;
+
+  --novacodex-text-primary: #111111;
+  --novacodex-text-secondary: #666666;
+
+  --novacodex-border: #e5e5e5;
+  --novacodex-background: #ffffff;
+  --novacodex-surface: #fafafa;
+
+  --novacodex-success: #16a34a;
+  --novacodex-warning: #d97706;
+  --novacodex-danger: #dc2626;
+  --novacodex-info: #2563eb;
+
+  --novacodex-radius-sm: 8px;
+  --novacodex-radius-md: 12px;
+  --novacodex-radius-lg: 16px;
+
+  --novacodex-space-1: 4px;
+  --novacodex-space-2: 8px;
+  --novacodex-space-3: 12px;
+  --novacodex-space-4: 16px;
+  --novacodex-space-5: 20px;
+  --novacodex-space-6: 24px;
+  --novacodex-space-8: 32px;
+  --novacodex-space-10: 40px;
+  --novacodex-space-12: 48px;
+
+  /* Organization dynamic sidebar & button overrides */
+  --novacodex-sidebar-bg: #0a0a0a;
+  --novacodex-sidebar-text: #ffffff;
+  --novacodex-button-bg: #111111;
+  --novacodex-button-text: #ffffff;
+}

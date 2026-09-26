@@ -1,0 +1,14 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ProgressRoutes = void 0;
+const express_1 = require("express");
+const ProgressController_1 = require("./ProgressController");
+const AuthenticateRequest_1 = require("../../middleware/AuthenticateRequest");
+const ResolveOrganizationContext_1 = require("../../middleware/ResolveOrganizationContext");
+const router = (0, express_1.Router)();
+router.use(AuthenticateRequest_1.AuthenticateRequest, ResolveOrganizationContext_1.ResolveOrganizationContext);
+router.post('/SaveStudentVideoWatchProgress', (req, res, next) => ProgressController_1.progressController.SaveStudentVideoWatchProgress(req, res, next));
+router.post('/MarkLessonAsCompleted/:lessonId', (req, res, next) => ProgressController_1.progressController.MarkLessonAsCompleted(req, res, next));
+router.get('/GetStudentCourseProgress/:courseId', (req, res, next) => ProgressController_1.progressController.GetStudentCourseProgress(req, res, next));
+router.get('/CheckCourseCompletionEligibility/:courseId', (req, res, next) => ProgressController_1.progressController.CheckCourseCompletionEligibility(req, res, next));
+exports.ProgressRoutes = router;
