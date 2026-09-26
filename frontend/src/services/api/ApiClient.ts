@@ -8,15 +8,10 @@ import { getSyncClientIp } from '../../utils/clientIpUtils';
 NProgress.configure({ showSpinner: false, speed: 400, minimum: 0.1 });
 
 const getApiBaseUrl = (): string => {
-  if (
-    typeof window !== 'undefined' &&
-    window.location.hostname &&
-    window.location.hostname !== 'localhost' &&
-    window.location.hostname !== '127.0.0.1'
-  ) {
-    return `${window.location.protocol}//${window.location.hostname}:5000/api/v1`;
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
   }
-  return import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api/v1';
+  return 'http://localhost:5000/api/v1';
 };
 
 const baseURL = getApiBaseUrl();

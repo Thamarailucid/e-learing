@@ -664,7 +664,10 @@ export class SuperAdminService {
 
   async UpdateOrganizationOwner(
     organizationId: string,
-    data: { email?: string; firstName?: string; lastName?: string; phone?: string; password?: string }
+    data: { email?: string; firstName?: string; lastName?: string; phone?: string; password?: string },
+    actorUserId?: string,
+    clientIp?: string,
+    userAgent?: string
   ) {
     const ownerRes = await executeQuery(
       `SELECT u.id, u.email, u.first_name, u.last_name, o.name as organization_name
