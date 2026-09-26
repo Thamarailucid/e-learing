@@ -9,7 +9,22 @@ const SaveWatchProgressSchema = zod_1.z.object({
     lastPositionSeconds: zod_1.z.number().min(0),
     watchPercentage: zod_1.z.number().min(0).max(100),
 });
+const SetActiveLessonSchema = zod_1.z.object({
+    courseId: zod_1.z.string().uuid(),
+    lessonId: zod_1.z.string().uuid(),
+});
 class ProgressController {
+    async SetActiveLesson(req, res, next) {
+        try {
+            const orgId = req.organizationId;
+            const parsed = SetActiveLessonSchema.parse(req.body);
+            const result = await ProgressService_1.progressService.SetActiveLesson(orgId, req.user.userId, parsed.courseId, parsed.lessonId);
+            res.json(ApiResponse_1.ApiResponse.success('Active lesson updated.', result));
+        }
+        catch (err) {
+            next(err);
+        }
+    }
     async SaveStudentVideoWatchProgress(req, res, next) {
         try {
             const orgId = req.organizationId;

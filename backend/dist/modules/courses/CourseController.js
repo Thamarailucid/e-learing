@@ -5,11 +5,12 @@ const zod_1 = require("zod");
 const CourseService_1 = require("./CourseService");
 const ApiResponse_1 = require("../../utils/ApiResponse");
 const ApiError_1 = require("../../utils/ApiError");
+const ClientIpResolver_1 = require("../../utils/ClientIpResolver");
 const CreateCourseSchema = zod_1.z.object({
     title: zod_1.z.string().min(3, 'Title must be at least 3 characters.'),
     description: zod_1.z.string().optional(),
     shortDescription: zod_1.z.string().optional(),
-    level: zod_1.z.enum(['BEGINNER', 'INTERMEDIATE', 'ADVANCED']).optional(),
+    level: zod_1.z.string().optional(),
     category: zod_1.z.string().optional(),
     thumbnailUrl: zod_1.z.string().optional(),
     isPrivate: zod_1.z.boolean().optional(),
@@ -41,9 +42,26 @@ class CourseController {
             const page = parseInt(req.query.page || '1', 10);
             const pageSize = parseInt(req.query.pageSize || '20', 10);
             const search = req.query.search;
+            const isStudent = req.user?.role === 'STUDENT';
             const isPublicOnly = req.query.isPublicOnly === 'true';
-            const result = await CourseService_1.courseService.GetCourseList(orgId, page, pageSize, search, isPublicOnly);
+            const studentUserId = isStudent ? req.user?.userId : undefined;
+            const category = req.query.category;
+            const level = req.query.level;
+            const status = req.query.status;
+            const accessType = req.query.accessType;
+            const result = await CourseService_1.courseService.GetCourseList(orgId, page, pageSize, search, isPublicOnly, category, level, status, accessType, studentUserId);
             res.json(ApiResponse_1.ApiResponse.success('Course list retrieved successfully.', result.data, result.pagination));
+        }
+        catch (err) {
+            next(err);
+        }
+    }
+    async GetStudentEnrolledCourses(req, res, next) {
+        try {
+            const orgId = req.organizationId;
+            const userId = req.user.userId;
+            const result = await CourseService_1.courseService.GetStudentEnrolledCourses(orgId, userId);
+            res.json(ApiResponse_1.ApiResponse.success('Student enrolled courses retrieved successfully.', result));
         }
         catch (err) {
             next(err);
@@ -53,7 +71,8 @@ class CourseController {
         try {
             const orgId = req.organizationId;
             const { courseId } = req.params;
-            const result = await CourseService_1.courseService.GetCourseDetails(orgId, courseId);
+            const callerRole = req.user?.role || '';
+            const result = await CourseService_1.courseService.GetCourseDetails(orgId, courseId, callerRole);
             res.json(ApiResponse_1.ApiResponse.success('Course details retrieved successfully.', result));
         }
         catch (err) {
@@ -144,7 +163,7 @@ class CourseController {
         try {
             const orgId = req.organizationId || req.user?.activeOrganizationId;
             const userId = req.user?.userId;
-            const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket.remoteAddress || '127.0.0.1';
+            const clientIp = await (0, ClientIpResolver_1.ResolveRequestClientIp)(req);
             const userAgent = req.headers['user-agent'] || 'Unknown';
             const { courseId, lessonId, violationType, details } = req.body;
             const result = await CourseService_1.courseService.LogCourseViolation({
@@ -158,6 +177,20 @@ class CourseController {
                 details: details || {},
             });
             res.status(201).json(ApiResponse_1.ApiResponse.success('Security violation logged successfully.', result));
+        }
+        catch (err) {
+            next(err);
+        }
+    }
+    async DeleteCourse(req, res, next) {
+        try {
+            const organizationId = req.organizationId;
+            const { courseId } = req.params;
+            const actorUserId = req.user.userId;
+            const clientIp = req.headers['x-client-ip'] || req.ip || '127.0.0.1';
+            const userAgent = req.headers['user-agent'] || 'Unknown';
+            const result = await CourseService_1.courseService.DeleteCourse(organizationId, courseId, actorUserId, clientIp, userAgent);
+            res.status(200).json(ApiResponse_1.ApiResponse.success(result.message, null));
         }
         catch (err) {
             next(err);

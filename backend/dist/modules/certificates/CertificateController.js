@@ -39,6 +39,16 @@ class CertificateController {
             next(err);
         }
     }
+    async GetStudentCertificateOverview(req, res, next) {
+        try {
+            const orgId = req.organizationId || req.headers['x-organization-id'] || undefined;
+            const result = await CertificateService_1.certificateService.GetStudentCertificateOverview(req.user.userId, orgId);
+            res.json(ApiResponse_1.ApiResponse.success('Certificate overview retrieved successfully.', result));
+        }
+        catch (err) {
+            next(err);
+        }
+    }
 }
 exports.CertificateController = CertificateController;
 exports.certificateController = new CertificateController();

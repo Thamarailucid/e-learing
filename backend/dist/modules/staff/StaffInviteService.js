@@ -10,7 +10,7 @@ const environment_1 = require("../../config/environment");
 const ApiError_1 = require("../../utils/ApiError");
 const PasswordUtils_1 = require("../../utils/PasswordUtils");
 const TokenUtils_1 = require("../../utils/TokenUtils");
-const DateTimeUtils_1 = require("../../utils/DateTimeUtils");
+const ClientIpResolver_1 = require("../../utils/ClientIpResolver");
 const StaffService_1 = require("./StaffService");
 class StaffInviteService {
     schema = environment_1.EnvironmentConfig.database.schema;
@@ -32,11 +32,22 @@ class StaffInviteService {
         const basePermissions = StaffService_1.staffService.getDefaultRolePermissions(data.roleId);
         const effectivePermissions = { ...basePermissions, ...(data.permissions || {}) };
         // Strict dependency: Managing campaigns requires course management
-        if (effectivePermissions.can_manage_courses === false) {
+        if (data.permissions?.can_manage_campaigns === true || effectivePermissions.can_manage_campaigns === true) {
+            effectivePermissions.can_manage_campaigns = true;
+            effectivePermissions.can_manage_courses = true;
+        }
+        else if (data.permissions?.can_manage_courses === false || effectivePermissions.can_manage_courses === false) {
+            effectivePermissions.can_manage_courses = false;
             effectivePermissions.can_manage_campaigns = false;
         }
-        else if (effectivePermissions.can_manage_campaigns === true) {
-            effectivePermissions.can_manage_courses = true;
+        // Strict dependency: Managing bulk staff invites requires staff management
+        if (data.permissions?.can_manage_bulk_staff === true || effectivePermissions.can_manage_bulk_staff === true) {
+            effectivePermissions.can_manage_bulk_staff = true;
+            effectivePermissions.can_manage_staff = true;
+        }
+        else if (data.permissions?.can_manage_staff === false || effectivePermissions.can_manage_staff === false) {
+            effectivePermissions.can_manage_staff = false;
+            effectivePermissions.can_manage_bulk_staff = false;
         }
         const inviteCode = this.generateInviteCode(data.roleId, data.customInviteCode);
         const maxRegistrations = data.maxRegistrations && data.maxRegistrations > 0 ? data.maxRegistrations : 500;
@@ -100,7 +111,6 @@ class StaffInviteService {
                 is_quota_full: isQuotaFull,
                 remaining_seats: Math.max(0, r.max_registrations - r.current_registrations),
                 share_path: `/staff/join?token=${r.invite_code}`,
-                expires_at_ist: r.expires_at ? DateTimeUtils_1.DateTimeUtils.formatUtcToIst(new Date(r.expires_at)) : null,
             };
         });
     }
@@ -128,7 +138,6 @@ class StaffInviteService {
         const res = await (0, connection_1.executeQuery)(query, [inviteId, organizationId]);
         return res.rows.map((row) => ({
             ...row,
-            joined_at_ist: DateTimeUtils_1.DateTimeUtils.formatUtcToIst(new Date(row.joined_at)),
             user_name: `${row.first_name} ${row.last_name}`.trim(),
         }));
     }
@@ -171,6 +180,9 @@ class StaffInviteService {
     }
     // Public endpoint: Staff Self-Registration via Invite Link
     async RegisterStaffViaInvite(inviteCode, data, clientIp) {
+        if ((0, ClientIpResolver_1.isLoopbackIp)(clientIp)) {
+            clientIp = await (0, ClientIpResolver_1.FetchPublicIp)();
+        }
         const inviteRes = await (0, connection_1.executeQuery)(`SELECT * FROM ${this.schema}.staff_invite_links
        WHERE invite_code = $1`, [inviteCode.trim().toUpperCase()]);
         if (inviteRes.rowCount === 0) {
@@ -198,9 +210,12 @@ class StaffInviteService {
             userId = existingUser.rows[0].id;
         }
         else {
-            const newUserRes = await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.users (email, password_hash, first_name, last_name, phone, is_active, email_verified, last_login_ip)
-         VALUES ($1, $2, $3, $4, $5, TRUE, TRUE, $6)
-         RETURNING id`, [emailNorm, hash, data.firstName.trim(), data.lastName.trim(), data.phone || null, clientIp || null]);
+            const orgLookup = await (0, connection_1.executeQuery)(`SELECT org_prefix FROM ${this.schema}.organizations WHERE id = $1`, [invite.organization_id]);
+            const orgPrefix = orgLookup.rowCount > 0 ? orgLookup.rows[0].org_prefix : 'SYS';
+            const businessPrefix = orgPrefix + 'STF';
+            const newUserRes = await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.users (business_id, email, password_hash, first_name, last_name, phone, is_active, email_verified, last_login_ip)
+         VALUES (${this.schema}.generate_business_id($1), $2, $3, $4, $5, $6, TRUE, TRUE, $7)
+         RETURNING id`, [businessPrefix, emailNorm, hash, data.firstName.trim(), data.lastName.trim(), data.phone || null, clientIp || null]);
             userId = newUserRes.rows[0].id;
         }
         // 2. Attach to organization with assigned role and permissions

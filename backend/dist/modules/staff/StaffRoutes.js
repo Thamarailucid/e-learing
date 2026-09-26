@@ -19,8 +19,8 @@ router.post('/ResetStaffPassword/:staffUserId', (0, AuthorizePermission_1.Author
 router.get('/GetRolePermissionsList', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'MANAGER'), (req, res, next) => StaffController_1.staffController.GetRolePermissionsList(req, res, next));
 router.put('/UpdateRolePermissions/:roleId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN'), (req, res, next) => StaffController_1.staffController.UpdateRolePermissions(req, res, next));
 // --- Bulk Staff Invite Links & QR Codes ---
-router.post('/CreateStaffInviteLink', (0, AuthorizePermission_1.AuthorizePermission)('can_manage_staff'), (req, res, next) => StaffInviteController_1.staffInviteController.CreateStaffInviteLink(req, res, next));
-router.get('/GetStaffInviteList', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'MANAGER'), (req, res, next) => StaffInviteController_1.staffInviteController.GetStaffInviteList(req, res, next));
-router.put('/ToggleStaffInviteStatus/:inviteId', (0, AuthorizePermission_1.AuthorizePermission)('can_manage_staff'), (req, res, next) => StaffInviteController_1.staffInviteController.ToggleStaffInviteStatus(req, res, next));
-router.get('/GetStaffInviteRegistrations/:inviteId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'MANAGER'), (req, res, next) => StaffInviteController_1.staffInviteController.GetStaffInviteRegistrations(req, res, next));
+router.post('/CreateStaffInviteLink', (0, AuthorizePermission_1.AuthorizePermission)('can_manage_bulk_staff'), (req, res, next) => StaffInviteController_1.staffInviteController.CreateStaffInviteLink(req, res, next));
+router.get('/GetStaffInviteList', (0, AuthorizePermission_1.AuthorizePermission)('can_manage_bulk_staff', 'can_manage_staff', 'MANAGER'), (req, res, next) => StaffInviteController_1.staffInviteController.GetStaffInviteList(req, res, next));
+router.put('/ToggleStaffInviteStatus/:inviteId', (0, AuthorizePermission_1.AuthorizePermission)('can_manage_bulk_staff'), (req, res, next) => StaffInviteController_1.staffInviteController.ToggleStaffInviteStatus(req, res, next));
+router.get('/GetStaffInviteRegistrations/:inviteId', (0, AuthorizePermission_1.AuthorizePermission)('can_manage_bulk_staff', 'can_manage_staff', 'MANAGER'), (req, res, next) => StaffInviteController_1.staffInviteController.GetStaffInviteRegistrations(req, res, next));
 exports.StaffRoutes = router;

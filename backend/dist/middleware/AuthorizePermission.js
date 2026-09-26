@@ -32,14 +32,6 @@ function AuthorizePermission(permissionKey, ...fallbackRoles) {
         if (['ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', ...fallbackRoles].includes(role)) {
             return next();
         }
-        // Check token permissions
-        const perms = req.user.permissions;
-        if (perms && typeof perms === 'object' && perms[permissionKey] === true) {
-            if (permissionKey === 'can_manage_campaigns' && perms.can_manage_courses !== true) {
-                return next(ApiError_1.ApiError.forbidden('Access restricted. College Outreach & Campaign management requires Course Management permission ("can_manage_courses").'));
-            }
-            return next();
-        }
         // Realtime database check in case permissions were updated after login token was issued
         const orgId = req.organizationId || req.user.activeOrganizationId;
         if (orgId) {
@@ -49,15 +41,36 @@ function AuthorizePermission(permissionKey, ...fallbackRoles) {
            WHERE organization_id = $1 AND user_id = $2 AND status = 'ACTIVE'`, [orgId, req.user.userId]);
                 if (res.rowCount > 0) {
                     const dbPerms = res.rows[0].permissions;
-                    if (dbPerms?.[permissionKey] === true) {
+                    const hasDbPerm = dbPerms?.[permissionKey] === true || (permissionKey === 'can_manage_bulk_staff' && dbPerms?.can_manage_staff === true);
+                    if (hasDbPerm) {
                         if (permissionKey === 'can_manage_campaigns' && dbPerms?.can_manage_courses !== true) {
                             return next(ApiError_1.ApiError.forbidden('Access restricted. College Outreach & Campaign management requires Course Management permission ("can_manage_courses").'));
                         }
+                        if (permissionKey === 'can_manage_bulk_staff' && dbPerms?.can_manage_staff !== true) {
+                            return next(ApiError_1.ApiError.forbidden('Access restricted. Bulk Staff Onboarding Links & QR management requires Staff Management permission ("can_manage_staff").'));
+                        }
                         return next();
+                    }
+                    else {
+                        return next(ApiError_1.ApiError.forbidden(`Access restricted. Your account lacks the required permission switch: "${permissionKey}". Please contact your organization owner or administrator.`));
                     }
                 }
             }
             catch { }
+        }
+        // Fallback: Check token permissions
+        const perms = req.user.permissions;
+        if (perms && typeof perms === 'object') {
+            const hasPerm = perms[permissionKey] === true || (permissionKey === 'can_manage_bulk_staff' && perms.can_manage_staff === true);
+            if (hasPerm) {
+                if (permissionKey === 'can_manage_campaigns' && perms.can_manage_courses !== true) {
+                    return next(ApiError_1.ApiError.forbidden('Access restricted. College Outreach & Campaign management requires Course Management permission ("can_manage_courses").'));
+                }
+                if (permissionKey === 'can_manage_bulk_staff' && perms.can_manage_staff !== true) {
+                    return next(ApiError_1.ApiError.forbidden('Access restricted. Bulk Staff Onboarding Links & QR management requires Staff Management permission ("can_manage_staff").'));
+                }
+                return next();
+            }
         }
         return next(ApiError_1.ApiError.forbidden(`Access restricted. Your account lacks the required permission switch: "${permissionKey}". Please contact your organization owner or administrator.`));
     };

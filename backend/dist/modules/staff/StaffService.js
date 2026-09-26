@@ -6,6 +6,7 @@ const environment_1 = require("../../config/environment");
 const ApiError_1 = require("../../utils/ApiError");
 const PasswordUtils_1 = require("../../utils/PasswordUtils");
 const DateTimeUtils_1 = require("../../utils/DateTimeUtils");
+const ClientIpResolver_1 = require("../../utils/ClientIpResolver");
 class StaffService {
     schema = environment_1.EnvironmentConfig.database.schema;
     async getOrganizationPrimaryOwner(organizationId) {
@@ -17,20 +18,37 @@ class StaffService {
        LIMIT 1`, [organizationId]);
         return res.rowCount > 0 ? res.rows[0] : null;
     }
-    async GetStaffList(organizationId, page = 1, pageSize = 20, search) {
+    async GetStaffList(organizationId, page = 1, pageSize = 20, search, roleId, status) {
+        if (page < 1)
+            page = 1;
+        if (pageSize < 1)
+            pageSize = 20;
+        if (pageSize > 100)
+            pageSize = 100;
         const offset = (page - 1) * pageSize;
         let whereClause = `WHERE om.organization_id = $1 AND om.role_id != 'STUDENT'`;
-        const params = [organizationId, pageSize, offset];
-        if (search) {
-            whereClause += ` AND (u.first_name ILIKE $4 OR u.last_name ILIKE $4 OR u.email ILIKE $4)`;
-            params.push(`%${search}%`);
+        const countParams = [organizationId];
+        if (roleId && roleId !== 'ALL') {
+            countParams.push(roleId);
+            whereClause += ` AND om.role_id = $${countParams.length}`;
+        }
+        if (status && status !== 'ALL') {
+            countParams.push(status);
+            whereClause += ` AND om.status = $${countParams.length}`;
+        }
+        if (search && search.trim()) {
+            countParams.push(`%${search.trim()}%`);
+            whereClause += ` AND (u.first_name ILIKE $${countParams.length} OR u.last_name ILIKE $${countParams.length} OR u.email ILIKE $${countParams.length})`;
         }
         const countRes = await (0, connection_1.executeQuery)(`SELECT COUNT(*) as count
        FROM ${this.schema}.organization_members om
        JOIN ${this.schema}.users u ON u.id = om.user_id
-       ${whereClause}`, search ? [organizationId, `%${search}%`] : [organizationId]);
+       ${whereClause}`, countParams);
         const totalRecords = parseInt(countRes.rows[0].count, 10);
         const totalPages = Math.ceil(totalRecords / pageSize);
+        const listParams = [...countParams, pageSize, offset];
+        const limitIdx = listParams.length - 1;
+        const offsetIdx = listParams.length;
         const listRes = await (0, connection_1.executeQuery)(`SELECT om.id as membership_id, om.role_id, om.status, om.created_at, om.permissions,
               u.id as user_id, u.email, u.first_name, u.last_name, u.phone, u.avatar_url,
               u.last_login_at, u.last_login_ip,
@@ -61,7 +79,8 @@ class StaffService {
            ELSE 2
          END,
          om.created_at ASC
-       LIMIT $2 OFFSET $3`, params);
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`, listParams);
+        const publicFallback = await (0, ClientIpResolver_1.FetchPublicIp)();
         const formattedData = listRes.rows.map((row) => {
             let perms = row.permissions;
             if (typeof perms === 'string') {
@@ -74,16 +93,17 @@ class StaffService {
             }
             return {
                 ...row,
+                last_login_ip: (0, ClientIpResolver_1.isLoopbackIp)(row.last_login_ip) ? (row.last_login_at ? publicFallback : null) : row.last_login_ip,
                 permissions: perms || {
                     can_edit_students: false,
                     can_reset_student_passwords: false,
                     can_manage_courses: false,
                     can_manage_campaigns: false,
                     can_manage_staff: false,
+                    can_manage_bulk_staff: false,
                     can_view_reports: false,
                 },
                 last_login_at_utc: row.last_login_at ? DateTimeUtils_1.DateTimeUtils.toUtcIsoString(row.last_login_at) : null,
-                last_login_at_ist: row.last_login_at ? DateTimeUtils_1.DateTimeUtils.formatUtcToIst(row.last_login_at) : null,
             };
         });
         return {
@@ -110,9 +130,12 @@ class StaffService {
                 isGeneratedPassword = true;
             }
             const hash = await PasswordUtils_1.PasswordUtils.hashPassword(initialPassword);
-            const newUserRes = await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.users (email, password_hash, first_name, last_name, phone, is_active, email_verified, must_reset_password)
-         VALUES ($1, $2, $3, $4, $5, TRUE, TRUE, TRUE)
-         RETURNING id`, [emailNorm, hash, data.firstName, data.lastName, data.phone || null]);
+            const orgLookup = await (0, connection_1.executeQuery)(`SELECT org_prefix FROM ${this.schema}.organizations WHERE id = $1`, [organizationId]);
+            const orgPrefix = orgLookup.rowCount > 0 ? orgLookup.rows[0].org_prefix : 'SYS';
+            const businessPrefix = orgPrefix + 'STF';
+            const newUserRes = await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.users (business_id, email, password_hash, first_name, last_name, phone, avatar_url, is_active, email_verified, must_reset_password)
+         VALUES (${this.schema}.generate_business_id($1), $2, $3, $4, $5, $6, NULL, TRUE, TRUE, TRUE)
+         RETURNING id`, [businessPrefix, emailNorm, hash, data.firstName, data.lastName, data.phone || null]);
             userId = newUserRes.rows[0].id;
         }
         else {
@@ -126,6 +149,7 @@ class StaffService {
                 can_manage_courses: true,
                 can_manage_campaigns: true,
                 can_manage_staff: true,
+                can_manage_bulk_staff: true,
                 can_view_reports: true,
             }
             : {
@@ -134,15 +158,27 @@ class StaffService {
                 can_manage_courses: false,
                 can_manage_campaigns: false,
                 can_manage_staff: false,
+                can_manage_bulk_staff: false,
                 can_view_reports: false,
                 ...(data.permissions || {}),
             };
         // Strict dependency: Managing campaigns requires course management
-        if (effectivePermissions.can_manage_courses === false) {
+        if (data.permissions?.can_manage_campaigns === true || effectivePermissions.can_manage_campaigns === true) {
+            effectivePermissions.can_manage_campaigns = true;
+            effectivePermissions.can_manage_courses = true;
+        }
+        else if (data.permissions?.can_manage_courses === false || effectivePermissions.can_manage_courses === false) {
+            effectivePermissions.can_manage_courses = false;
             effectivePermissions.can_manage_campaigns = false;
         }
-        else if (effectivePermissions.can_manage_campaigns === true) {
-            effectivePermissions.can_manage_courses = true;
+        // Strict dependency: Managing bulk staff invites requires staff management
+        if (data.permissions?.can_manage_bulk_staff === true || effectivePermissions.can_manage_bulk_staff === true) {
+            effectivePermissions.can_manage_bulk_staff = true;
+            effectivePermissions.can_manage_staff = true;
+        }
+        else if (data.permissions?.can_manage_staff === false || effectivePermissions.can_manage_staff === false) {
+            effectivePermissions.can_manage_staff = false;
+            effectivePermissions.can_manage_bulk_staff = false;
         }
         // Attach to organization with role and permissions
         const memberRes = await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.organization_members (organization_id, user_id, role_id, permissions, status)
@@ -190,13 +226,24 @@ class StaffService {
         if (data.roleId === 'ORGANIZATION_OWNER' && !isCallerOwnerOrSuper) {
             throw ApiError_1.ApiError.forbidden('Only the primary Organization Owner or Super Admin can assign the Organization Owner role.');
         }
-        if (data.firstName || data.lastName || data.phone !== undefined) {
-            await (0, connection_1.executeQuery)(`UPDATE ${this.schema}.users
-         SET first_name = COALESCE($1, first_name),
-             last_name = COALESCE($2, last_name),
-             phone = COALESCE($3, phone),
-             updated_at = CURRENT_TIMESTAMP
-         WHERE id = $4`, [data.firstName || null, data.lastName || null, data.phone ?? null, staffUserId]);
+        const userFields = [];
+        const userParams = [staffUserId];
+        if (data.firstName !== undefined) {
+            userParams.push(data.firstName.trim());
+            userFields.push(`first_name = $${userParams.length}`);
+        }
+        if (data.lastName !== undefined) {
+            userParams.push(data.lastName.trim());
+            userFields.push(`last_name = $${userParams.length}`);
+        }
+        if (data.phone !== undefined) {
+            userParams.push(data.phone ? data.phone.trim() : null);
+            userFields.push(`phone = $${userParams.length}`);
+        }
+        // Avatar URL logic removed
+        if (userFields.length > 0) {
+            userFields.push(`updated_at = CURRENT_TIMESTAMP`);
+            await (0, connection_1.executeQuery)(`UPDATE ${this.schema}.users SET ${userFields.join(', ')} WHERE id = $1`, userParams);
         }
         const currentRole = data.roleId || checkRes.rows[0].role_id;
         const isFullRole = ['ORGANIZATION_ADMIN', 'ORGANIZATION_OWNER'].includes(currentRole);
@@ -208,6 +255,7 @@ class StaffService {
                 can_manage_courses: true,
                 can_manage_campaigns: true,
                 can_manage_staff: true,
+                can_manage_bulk_staff: true,
                 can_view_reports: true,
             };
         }
@@ -219,7 +267,7 @@ class StaffService {
                 ...existingPerms,
                 ...permissionsToSet,
             };
-            // Strict mutual dependency enforcement
+            // Strict mutual dependency enforcement: campaigns & courses
             if (data.permissions?.can_manage_campaigns === true) {
                 merged.can_manage_campaigns = true;
                 merged.can_manage_courses = true;
@@ -230,6 +278,18 @@ class StaffService {
             }
             else if (merged.can_manage_courses === false) {
                 merged.can_manage_campaigns = false;
+            }
+            // Strict mutual dependency enforcement: bulk staff & staff management
+            if (data.permissions?.can_manage_bulk_staff === true) {
+                merged.can_manage_bulk_staff = true;
+                merged.can_manage_staff = true;
+            }
+            else if (data.permissions?.can_manage_staff === false) {
+                merged.can_manage_staff = false;
+                merged.can_manage_bulk_staff = false;
+            }
+            else if (merged.can_manage_staff === false) {
+                merged.can_manage_bulk_staff = false;
             }
             permissionsToSet = merged;
         }
@@ -258,7 +318,7 @@ class StaffService {
        WHERE om.organization_id = $1 AND om.user_id = $2`, [organizationId, staffUserId]);
         return updatedRes.rows[0];
     }
-    async ResetStaffPassword(organizationId, staffUserId, newPassword, actorId, actorName, actorRole, isSuperAdmin) {
+    async ResetStaffPassword(organizationId, staffUserId, newPassword, actorId, actorName, actorRole, isSuperAdmin, clientIp) {
         const checkRes = await (0, connection_1.executeQuery)(`SELECT om.id, om.role_id, u.id as user_id, u.email, u.first_name, u.last_name
        FROM ${this.schema}.organization_members om
        JOIN ${this.schema}.users u ON u.id = om.user_id
@@ -288,12 +348,16 @@ class StaffService {
            current_session_id = NULL,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $2`, [hash, staffUserId]);
+        if ((0, ClientIpResolver_1.isLoopbackIp)(clientIp)) {
+            clientIp = await (0, ClientIpResolver_1.FetchPublicIp)();
+        }
         try {
-            await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.audit_logs (organization_id, user_id, action, resource, resource_id, metadata)
-         VALUES ($1, $2, 'STAFF_PASSWORD_RESET', 'users', $3, $4)`, [
+            await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.audit_logs (organization_id, user_id, action, resource, resource_id, ip_address, metadata)
+         VALUES ($1::uuid, $2::uuid, 'STAFF_PASSWORD_RESET', 'users', $3::text, $4::text, $5::jsonb)`, [
                 organizationId,
                 actorId || null,
                 staffUserId,
+                clientIp,
                 JSON.stringify({
                     staffEmail: staff.email,
                     staffName: `${staff.first_name} ${staff.last_name}`.trim(),
@@ -322,6 +386,7 @@ class StaffService {
                     can_manage_courses: true,
                     can_manage_campaigns: true,
                     can_manage_staff: true,
+                    can_manage_bulk_staff: true,
                     can_edit_students: true,
                     can_reset_student_passwords: true,
                     can_view_reports: true,
@@ -331,6 +396,7 @@ class StaffService {
                     can_manage_courses: true,
                     can_manage_campaigns: true,
                     can_manage_staff: false,
+                    can_manage_bulk_staff: false,
                     can_edit_students: false,
                     can_reset_student_passwords: false,
                     can_view_reports: true,
@@ -340,6 +406,7 @@ class StaffService {
                     can_manage_courses: true,
                     can_manage_campaigns: false,
                     can_manage_staff: false,
+                    can_manage_bulk_staff: false,
                     can_edit_students: false,
                     can_reset_student_passwords: false,
                     can_view_reports: false,
@@ -349,6 +416,7 @@ class StaffService {
                     can_manage_courses: false,
                     can_manage_campaigns: false,
                     can_manage_staff: false,
+                    can_manage_bulk_staff: false,
                     can_edit_students: true,
                     can_reset_student_passwords: true,
                     can_view_reports: true,
@@ -360,6 +428,7 @@ class StaffService {
                     can_manage_courses: false,
                     can_manage_campaigns: false,
                     can_manage_staff: false,
+                    can_manage_bulk_staff: false,
                     can_edit_students: false,
                     can_reset_student_passwords: false,
                     can_view_reports: true,
@@ -406,6 +475,18 @@ class StaffService {
         }
         else if (effective.can_manage_courses === false) {
             effective.can_manage_campaigns = false;
+        }
+        // Strict dependency: Managing bulk staff invites requires staff management
+        if (permissions?.can_manage_bulk_staff === true) {
+            effective.can_manage_bulk_staff = true;
+            effective.can_manage_staff = true;
+        }
+        else if (permissions?.can_manage_staff === false) {
+            effective.can_manage_staff = false;
+            effective.can_manage_bulk_staff = false;
+        }
+        else if (effective.can_manage_staff === false) {
+            effective.can_manage_bulk_staff = false;
         }
         const upsertRes = await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.organization_role_permissions (organization_id, role_id, permissions, updated_at)
        VALUES ($1, $2, $3::jsonb, CURRENT_TIMESTAMP)

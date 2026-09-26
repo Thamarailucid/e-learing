@@ -19,13 +19,16 @@ function createApp() {
                 return callback(null, true);
             if (environment_1.EnvironmentConfig.application.environment === 'development' ||
                 environment_1.EnvironmentConfig.application.corsAllowedOrigins.includes(origin) ||
-                environment_1.EnvironmentConfig.application.corsAllowedOrigins.includes('*')) {
+                environment_1.EnvironmentConfig.application.corsAllowedOrigins.includes('*') ||
+                /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/.test(origin)) {
                 return callback(null, true);
             }
             return callback(new Error(`Origin ${origin} not permitted by CORS policy.`));
         },
         credentials: true,
-        allowedHeaders: ['Content-Type', 'Authorization', 'x-organization-id'],
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'x-organization-id', 'x-client-ip', 'Accept', 'X-Requested-With', 'Origin'],
+        exposedHeaders: ['Content-Disposition'],
     }));
     // 2. Request Parsers
     app.use(express_1.default.json({ limit: '10mb' }));

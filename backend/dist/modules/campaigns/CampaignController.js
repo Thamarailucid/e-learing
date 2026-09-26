@@ -4,6 +4,7 @@ exports.campaignController = exports.CampaignController = void 0;
 const CampaignService_1 = require("./CampaignService");
 const ApiResponse_1 = require("../../utils/ApiResponse");
 const ApiError_1 = require("../../utils/ApiError");
+const ClientIpResolver_1 = require("../../utils/ClientIpResolver");
 class CampaignController {
     service = new CampaignService_1.CampaignService();
     async CreateCampaignLink(req, res, next) {
@@ -60,8 +61,7 @@ class CampaignController {
         try {
             const userId = req.user.userId;
             const { inviteCode } = req.body;
-            const forwarded = req.headers['x-forwarded-for'];
-            const clientIp = typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : req.socket.remoteAddress;
+            const clientIp = await (0, ClientIpResolver_1.ResolveRequestClientIp)(req);
             if (!inviteCode)
                 throw ApiError_1.ApiError.badRequest('inviteCode is required.');
             const result = await this.service.RedeemCampaignLink(userId, inviteCode, clientIp);

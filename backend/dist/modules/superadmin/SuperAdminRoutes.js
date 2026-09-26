@@ -1,4 +1,7 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SuperAdminRoutes = void 0;
 const express_1 = require("express");
@@ -17,4 +20,8 @@ router.post('/ResetOrganizationOwnerPassword/:organizationId', (req, res, next) 
 router.put('/UpdateOrganizationOwner/:organizationId', (req, res, next) => SuperAdminController_1.superAdminController.UpdateOrganizationOwner(req, res, next));
 router.put('/UpdateOrganizationProfile/:organizationId', (req, res, next) => SuperAdminController_1.superAdminController.UpdateOrganizationProfile(req, res, next));
 router.get('/GetPlatformAuditLogList', (req, res, next) => SuperAdminController_1.superAdminController.GetPlatformAuditLogList(req, res, next));
+router.get('/GetAuditLogFilterOptions', (req, res, next) => SuperAdminController_1.superAdminController.GetAuditLogFilterOptions(req, res, next));
+const multer_1 = __importDefault(require("multer"));
+const upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
+router.post('/UploadOrganizationLogo/:organizationId', upload.single('file'), (req, res, next) => SuperAdminController_1.superAdminController.UploadOrganizationLogo(req, res, next));
 exports.SuperAdminRoutes = router;

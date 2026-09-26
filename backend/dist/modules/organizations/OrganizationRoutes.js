@@ -19,7 +19,7 @@ const router = (0, express_1.Router)();
 router.use(AuthenticateRequest_1.AuthenticateRequest, ResolveOrganizationContext_1.ResolveOrganizationContext);
 router.get('/GetOrganizationDetails', (req, res, next) => OrganizationController_1.organizationController.GetOrganizationDetails(req, res, next));
 router.get('/GetOrganizationThemeSettings', (req, res, next) => OrganizationController_1.organizationController.GetOrganizationThemeSettings(req, res, next));
-router.get('/GetOrganizationDashboard', (req, res, next) => OrganizationController_1.organizationController.GetOrganizationDashboard(req, res, next));
+router.get('/GetOrganizationDashboard', (0, AuthorizePermission_1.AuthorizePermission)('can_view_reports', 'MANAGER', 'INSTRUCTOR'), (req, res, next) => OrganizationController_1.organizationController.GetOrganizationDashboard(req, res, next));
 // Admin only endpoints
 router.put('/UpdateOrganizationDetails', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN'), (req, res, next) => OrganizationController_1.organizationController.UpdateOrganizationDetails(req, res, next));
 router.put('/UpdateOrganizationThemeSettings', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN'), (req, res, next) => OrganizationController_1.organizationController.UpdateOrganizationThemeSettings(req, res, next));

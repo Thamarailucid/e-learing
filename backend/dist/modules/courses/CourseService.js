@@ -6,39 +6,127 @@ const environment_1 = require("../../config/environment");
 const ApiError_1 = require("../../utils/ApiError");
 const FileStorageFactory_1 = require("../../services/storage/FileStorageFactory");
 const AssetNamingUtils_1 = require("../../utils/AssetNamingUtils");
+const ClientIpResolver_1 = require("../../utils/ClientIpResolver");
 class CourseService {
     schema = environment_1.EnvironmentConfig.database.schema;
     storage = FileStorageFactory_1.FileStorageFactory.getInstance();
-    async GetCourseList(organizationId, page = 1, pageSize = 20, search, isPublicOnly = false) {
+    async GetCourseList(organizationId, page = 1, pageSize = 20, search, isPublicOnly = false, category, level, status, accessType, studentUserId) {
+        if (page < 1)
+            page = 1;
+        if (pageSize < 1)
+            pageSize = 20;
+        if (pageSize > 100)
+            pageSize = 100;
         const offset = (page - 1) * pageSize;
         let whereClause = `WHERE c.organization_id = $1`;
-        const params = [organizationId, pageSize, offset];
-        if (isPublicOnly) {
+        const countParams = [organizationId];
+        if (studentUserId) {
+            countParams.push(studentUserId);
+            const studentIdx = countParams.length;
+            if (isPublicOnly) {
+                whereClause += ` AND c.is_published = TRUE AND (c.is_private = FALSE OR c.is_private IS NULL)`;
+            }
+            else {
+                // Students can see published public courses PLUS any private/exclusive course they have active enrollment in
+                whereClause += ` AND c.is_published = TRUE AND (
+          (c.is_private = FALSE OR c.is_private IS NULL)
+          OR EXISTS (
+            SELECT 1 FROM ${this.schema}.enrollments e
+            WHERE e.course_id = c.id AND e.user_id = $${studentIdx} AND e.organization_id = $1 AND e.status = 'ACTIVE'
+          )
+        )`;
+            }
+        }
+        else if (isPublicOnly) {
             whereClause += ` AND c.is_published = TRUE AND (c.is_private = FALSE OR c.is_private IS NULL)`;
         }
-        if (search) {
-            whereClause += ` AND (c.title ILIKE $4 OR c.description ILIKE $4)`;
-            params.push(`%${search}%`);
+        if (category && category !== 'ALL') {
+            countParams.push(category);
+            whereClause += ` AND c.category = $${countParams.length}`;
         }
-        const countRes = await (0, connection_1.executeQuery)(`SELECT COUNT(*) as count FROM ${this.schema}.courses c ${whereClause}`, search ? [organizationId, `%${search}%`] : [organizationId]);
+        if (level && level !== 'ALL') {
+            countParams.push(level);
+            whereClause += ` AND c.level = $${countParams.length}`;
+        }
+        if (status && status !== 'ALL') {
+            countParams.push(status);
+            whereClause += ` AND c.status = $${countParams.length}`;
+        }
+        if (accessType && accessType !== 'ALL') {
+            if (accessType === 'PRIVATE') {
+                whereClause += ` AND c.is_private = TRUE`;
+            }
+            else if (accessType === 'PUBLIC') {
+                whereClause += ` AND (c.is_private = FALSE OR c.is_private IS NULL)`;
+            }
+        }
+        if (search && search.trim()) {
+            countParams.push(`%${search.trim()}%`);
+            whereClause += ` AND (c.title ILIKE $${countParams.length} OR c.description ILIKE $${countParams.length} OR c.short_description ILIKE $${countParams.length} OR c.category ILIKE $${countParams.length})`;
+        }
+        const countRes = await (0, connection_1.executeQuery)(`SELECT COUNT(*) as count FROM ${this.schema}.courses c ${whereClause}`, countParams);
         const totalRecords = parseInt(countRes.rows[0].count, 10);
         const totalPages = Math.ceil(totalRecords / pageSize);
+        const listParams = [...countParams, pageSize, offset];
+        const limitIdx = listParams.length - 1;
+        const offsetIdx = listParams.length;
         const listRes = await (0, connection_1.executeQuery)(`SELECT c.id, c.title, c.slug, c.short_description, c.thumbnail_url, c.level, c.category,
               c.status, c.is_published, c.is_private, c.access_type, c.min_video_watch_percentage, c.pass_quiz_percentage, c.created_at,
               u.first_name as author_first_name, u.last_name as author_last_name,
+              (c.is_private = TRUE OR c.access_type = 'PRIVATE') as is_exclusive,
               (SELECT COUNT(*) FROM ${this.schema}.lessons l WHERE l.course_id = c.id) as total_lessons_count,
               (SELECT COUNT(*) FROM ${this.schema}.enrollments e WHERE e.course_id = c.id) as total_enrolled_students
        FROM ${this.schema}.courses c
        LEFT JOIN ${this.schema}.users u ON u.id = c.created_by
        ${whereClause}
        ORDER BY c.created_at DESC
-       LIMIT $2 OFFSET $3`, params);
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`, listParams);
         return {
             data: listRes.rows,
             pagination: { page, pageSize, totalRecords, totalPages },
         };
     }
-    async GetCourseDetails(organizationId, courseId) {
+    async GetStudentEnrolledCourses(organizationId, userId) {
+        const res = await (0, connection_1.executeQuery)(`SELECT c.id, c.title, c.slug, c.short_description, c.description, c.thumbnail_url,
+              c.level, c.category, c.status, c.is_published, c.is_private, c.access_type,
+              e.enrolled_at, e.status as enrollment_status,
+              COALESCE(scp.progress_percentage, 0.00) as progress_percentage,
+              COALESCE(scp.completed_lessons_count, 0) as completed_lessons_count,
+              COALESCE(
+                NULLIF(scp.total_lessons_count, 0),
+                (SELECT COUNT(*) FROM ${this.schema}.lessons l WHERE l.course_id = c.id),
+                0
+              ) as total_lessons_count,
+              COALESCE(scp.is_completed, FALSE) as is_completed,
+              scp.last_activity_at,
+              scp.last_lesson_id,
+              COALESCE(l_last.title, (SELECT l_first.title FROM ${this.schema}.lessons l_first WHERE l_first.course_id = c.id ORDER BY l_first.order_index ASC LIMIT 1)) as last_lesson_title,
+              COALESCE(scp.last_position_seconds, 0) as last_position_seconds,
+              ccl.campaign_name,
+              ccl.target_institution,
+              (c.is_private = TRUE OR c.access_type = 'PRIVATE' OR ccl.id IS NOT NULL) as is_exclusive
+       FROM ${this.schema}.enrollments e
+       JOIN ${this.schema}.courses c ON c.id = e.course_id
+       LEFT JOIN ${this.schema}.student_course_progress scp
+         ON scp.course_id = c.id AND scp.user_id = e.user_id AND scp.organization_id = e.organization_id
+       LEFT JOIN ${this.schema}.lessons l_last
+         ON l_last.id = scp.last_lesson_id
+       LEFT JOIN ${this.schema}.course_campaign_redemptions ccr
+         ON ccr.course_id = c.id AND ccr.user_id = e.user_id AND ccr.organization_id = e.organization_id
+       LEFT JOIN ${this.schema}.course_campaign_links ccl
+         ON ccl.id = ccr.campaign_link_id
+       WHERE e.organization_id = $1 AND e.user_id = $2 AND e.status = 'ACTIVE'
+       ORDER BY COALESCE(scp.last_activity_at, e.enrolled_at) DESC`, [organizationId, userId]);
+        return res.rows.map((row) => ({
+            ...row,
+            progress_percentage: parseFloat(row.progress_percentage || '0'),
+            total_lessons_count: parseInt(row.total_lessons_count || '0', 10),
+            completed_lessons_count: parseInt(row.completed_lessons_count || '0', 10),
+            last_position_seconds: parseInt(row.last_position_seconds || '0', 10),
+            is_exclusive: Boolean(row.is_exclusive),
+        }));
+    }
+    async GetCourseDetails(organizationId, courseId, callerRole) {
         const courseRes = await (0, connection_1.executeQuery)(`SELECT c.*, u.first_name as author_first_name, u.last_name as author_last_name
        FROM ${this.schema}.courses c
        LEFT JOIN ${this.schema}.users u ON u.id = c.created_by
@@ -48,14 +136,29 @@ class CourseService {
         const course = courseRes.rows[0];
         // Fetch Sections
         const sectionsRes = await (0, connection_1.executeQuery)(`SELECT * FROM ${this.schema}.course_sections WHERE course_id = $1 ORDER BY order_index ASC, created_at ASC`, [courseId]);
-        // Fetch Lessons
-        const lessonsRes = await (0, connection_1.executeQuery)(`SELECT id, section_id, title, content_type, video_url, video_duration_seconds, order_index, is_free_preview
+        // Fetch Lessons with metadata (size, timestamps)
+        const lessonsRes = await (0, connection_1.executeQuery)(`SELECT id, section_id, title, content_type, video_url, video_duration_seconds, order_index, is_free_preview, video_file_size_bytes, created_at, updated_at
        FROM ${this.schema}.lessons WHERE course_id = $1 ORDER BY order_index ASC, created_at ASC`, [courseId]);
-        // Nest lessons inside sections
+        const isStudent = callerRole === 'STUDENT';
+        // Nest lessons inside sections, stripping sensitive fields for students
         const sections = sectionsRes.rows.map((sec) => ({
             ...sec,
-            lessons: lessonsRes.rows.filter((l) => l.section_id === sec.id),
+            lessons: lessonsRes.rows
+                .filter((l) => l.section_id === sec.id)
+                .map((l) => {
+                if (isStudent) {
+                    // Students should NOT get raw video_url or file size — they use signed playback URL
+                    const { video_url, video_file_size_bytes, ...safeLesson } = l;
+                    return safeLesson;
+                }
+                return l;
+            }),
         }));
+        // For students, strip internal course fields they don't need
+        if (isStudent) {
+            const { created_by, organization_id, ...safeCourse } = course;
+            return { ...safeCourse, sections };
+        }
         return {
             ...course,
             sections,
@@ -175,6 +278,9 @@ class CourseService {
         };
     }
     async LogCourseViolation(data) {
+        if ((0, ClientIpResolver_1.isLoopbackIp)(data.clientIp)) {
+            data.clientIp = await (0, ClientIpResolver_1.FetchPublicIp)();
+        }
         let resolvedOrgId = data.organizationId;
         if (!resolvedOrgId && data.courseId) {
             const courseCheck = await (0, connection_1.executeQuery)(`SELECT organization_id FROM ${this.schema}.courses WHERE id = $1`, [data.courseId]);
@@ -225,6 +331,30 @@ class CourseService {
             JSON.stringify(metadata),
         ]);
         return violationRes.rows[0];
+    }
+    async DeleteCourse(organizationId, courseId, actorUserId, clientIp, userAgent) {
+        const courseRes = await (0, connection_1.executeQuery)(`SELECT id, title FROM ${this.schema}.courses WHERE id = $1 AND organization_id = $2`, [courseId, organizationId]);
+        if (courseRes.rowCount === 0) {
+            throw ApiError_1.ApiError.notFound('Course not found.');
+        }
+        const courseTitle = courseRes.rows[0].title;
+        await (0, connection_1.executeQuery)(`DELETE FROM ${this.schema}.courses WHERE id = $1 AND organization_id = $2`, [courseId, organizationId]);
+        // Record audit log for course deletion
+        await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.audit_logs (
+        organization_id, user_id, action, resource, resource_id, ip_address, user_agent, metadata
+      ) VALUES ($1, $2, 'DELETE_COURSE', 'courses', $3, $4, $5, $6::jsonb)`, [
+            organizationId,
+            actorUserId,
+            courseId,
+            clientIp,
+            userAgent,
+            JSON.stringify({
+                course_id: courseId,
+                course_title: courseTitle,
+                description: `Course "${courseTitle}" was deleted.`
+            }),
+        ]);
+        return { success: true, message: 'Course deleted successfully' };
     }
 }
 exports.CourseService = CourseService;

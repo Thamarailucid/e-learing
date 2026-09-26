@@ -27,10 +27,10 @@ class VideoService {
             mimeType: file.mimetype,
             buffer: file.buffer,
         });
-        // Update lesson video_url
+        // Update lesson video_url and video_file_size_bytes
         await (0, connection_1.executeQuery)(`UPDATE ${this.schema}.lessons
-       SET video_url = $1, content_type = 'VIDEO', updated_at = CURRENT_TIMESTAMP
-       WHERE id = $2`, [uploadResult.url, lessonId]);
+       SET video_url = $1, video_file_size_bytes = $2, content_type = 'VIDEO', updated_at = CURRENT_TIMESTAMP
+       WHERE id = $3`, [uploadResult.url, uploadResult.fileSize, lessonId]);
         return {
             lessonId,
             videoUrl: uploadResult.url,
@@ -46,12 +46,39 @@ class VideoService {
             const staffRes = await (0, connection_1.executeQuery)(`SELECT role_id FROM ${this.schema}.organization_members WHERE user_id = $1 AND organization_id = $2 AND status = 'ACTIVE'`, [userId, organizationId]);
             const isStaff = staffRes.rows.length > 0 && staffRes.rows[0].role_id !== 'STUDENT';
             if (!isStaff) {
-                // Must be enrolled student
+                // Check if student already has active enrollment
                 const enrollRes = await (0, connection_1.executeQuery)(`SELECT e.id FROM ${this.schema}.enrollments e
            JOIN ${this.schema}.lessons l ON l.course_id = e.course_id
            WHERE l.id = $1 AND e.user_id = $2 AND e.organization_id = $3 AND e.status = 'ACTIVE'`, [lessonId, userId, organizationId]);
                 if (enrollRes.rowCount === 0) {
-                    throw ApiError_1.ApiError.forbidden('You are not enrolled in the course for this video.');
+                    // Check if lesson is free preview or belongs to a published public course
+                    const lessonCourseRes = await (0, connection_1.executeQuery)(`SELECT l.id, l.is_free_preview, c.id as course_id, c.is_published, c.is_private
+             FROM ${this.schema}.lessons l
+             JOIN ${this.schema}.courses c ON c.id = l.course_id
+             WHERE l.id = $1 AND l.organization_id = $2`, [lessonId, organizationId]);
+                    if (lessonCourseRes.rowCount === 0) {
+                        throw ApiError_1.ApiError.notFound('Lesson video not found.');
+                    }
+                    const info = lessonCourseRes.rows[0];
+                    if (info.is_free_preview) {
+                        // Free preview lessons can be viewed before enrollment
+                    }
+                    else if (info.is_published && (info.is_private === false || info.is_private === null)) {
+                        // Active academy student opening a published public course: auto-enroll
+                        await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.enrollments (organization_id, user_id, course_id, status)
+               VALUES ($1, $2, $3, 'ACTIVE')
+               ON CONFLICT (organization_id, user_id, course_id) DO UPDATE SET status = 'ACTIVE'`, [organizationId, userId, info.course_id]);
+                        // Initialize course progress tracking
+                        const totalLessonsRes = await (0, connection_1.executeQuery)(`SELECT COUNT(*) as count FROM ${this.schema}.lessons WHERE course_id = $1`, [info.course_id]);
+                        const totalLessons = parseInt(totalLessonsRes.rows[0]?.count || '1', 10);
+                        await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.student_course_progress (organization_id, user_id, course_id, total_lessons_count)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (organization_id, user_id, course_id) DO NOTHING`, [organizationId, userId, info.course_id, totalLessons]);
+                    }
+                    else {
+                        // Private course strictly requires invite campaign token redemption
+                        throw ApiError_1.ApiError.forbidden('You are not enrolled in the course for this video.');
+                    }
                 }
             }
         }

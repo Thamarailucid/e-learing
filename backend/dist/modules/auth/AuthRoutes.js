@@ -14,4 +14,6 @@ router.get('/GetAuthenticatedUserProfile', AuthenticateRequest_1.AuthenticateReq
 router.get('/GetAuthenticatedUserOrganizations', AuthenticateRequest_1.AuthenticateRequest, (req, res, next) => AuthController_1.authController.GetAuthenticatedUserOrganizations(req, res, next));
 router.post('/PostSwitchActiveOrganization', AuthenticateRequest_1.AuthenticateRequest, (req, res, next) => AuthController_1.authController.PostSwitchActiveOrganization(req, res, next));
 router.post('/PostResetFirstTimePassword', AuthenticateRequest_1.AuthenticateRequest, (req, res, next) => AuthController_1.authController.PostResetFirstTimePassword(req, res, next));
+router.put('/UpdateUserProfile', AuthenticateRequest_1.AuthenticateRequest, (req, res, next) => AuthController_1.authController.UpdateUserProfile(req, res, next));
+router.delete('/DeleteProfileAvatar', AuthenticateRequest_1.AuthenticateRequest, (req, res, next) => AuthController_1.authController.DeleteProfileAvatar(req, res, next));
 exports.AuthRoutes = router;

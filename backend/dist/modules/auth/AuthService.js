@@ -11,9 +11,13 @@ const PasswordUtils_1 = require("../../utils/PasswordUtils");
 const TokenUtils_1 = require("../../utils/TokenUtils");
 const ApiError_1 = require("../../utils/ApiError");
 const DateTimeUtils_1 = require("../../utils/DateTimeUtils");
+const ClientIpResolver_1 = require("../../utils/ClientIpResolver");
 class AuthService {
     schema = environment_1.EnvironmentConfig.database.schema;
     async PostLoginUser(email, passwordPlain, requestedOrgId, clearPreviousSession = false, clientIp) {
+        if ((0, ClientIpResolver_1.isLoopbackIp)(clientIp)) {
+            clientIp = await (0, ClientIpResolver_1.FetchPublicIp)();
+        }
         const emailNorm = email.toLowerCase().trim();
         const userRes = await (0, connection_1.executeQuery)(`SELECT id, email, password_hash, first_name, last_name, is_super_admin, is_active,
               current_session_id, last_login_at, must_reset_password
@@ -38,7 +42,6 @@ class AuthService {
                 throw ApiError_1.ApiError.conflict('This student account is currently active on another device or browser tab. Would you like to clear the other session and log in here?', 'SESSION_CONFLICT', {
                     hasActiveSession: true,
                     lastLoginAt: user.last_login_at ? DateTimeUtils_1.DateTimeUtils.toUtcIsoString(user.last_login_at) : null,
-                    lastLoginAtIst: user.last_login_at ? DateTimeUtils_1.DateTimeUtils.formatUtcToIst(user.last_login_at) : null,
                 });
             }
         }
@@ -52,29 +55,71 @@ class AuthService {
            last_login_ip = $3,
            updated_at = $2
        WHERE id = $4`, [newSessionId, nowUtc, clientIp || null, user.id]);
-        // Fetch user's organization memberships
-        const memberRes = await (0, connection_1.executeQuery)(`SELECT om.organization_id, om.role_id, om.permissions, o.name as organization_name, o.slug as organization_slug, o.logo_url as organization_logo_url, o.status as org_status
+        // Fetch all user's organization memberships (with member status, org status, and license info)
+        const allMembersRes = await (0, connection_1.executeQuery)(`SELECT om.organization_id, om.role_id, om.permissions, om.status as member_status,
+              o.name as organization_name, o.slug as organization_slug, o.logo_url as organization_logo_url,
+              o.status as org_status, o.license_is_active, o.license_end_date
        FROM ${this.schema}.organization_members om
        JOIN ${this.schema}.organizations o ON o.id = om.organization_id
-       WHERE om.user_id = $1 AND om.status = 'ACTIVE'`, [user.id]);
+       WHERE om.user_id = $1`, [user.id]);
         let activeOrgId = requestedOrgId;
         let role = user.is_super_admin ? 'SUPER_ADMIN' : 'STUDENT';
         let activeOrgMeta = null;
-        if (memberRes.rowCount > 0) {
+        if (!user.is_super_admin) {
+            if (allMembersRes.rowCount === 0) {
+                throw ApiError_1.ApiError.forbidden('Your account is not associated with any organization. Please contact your administrator.', 'NO_ACTIVE_ORGANIZATION');
+            }
             if (activeOrgId) {
-                const found = memberRes.rows.find((m) => m.organization_id === activeOrgId);
-                if (found) {
-                    role = found.role_id;
-                    activeOrgMeta = found;
+                const found = allMembersRes.rows.find((m) => m.organization_id === activeOrgId);
+                if (!found) {
+                    throw ApiError_1.ApiError.forbidden('You do not belong to the requested organization.', 'TENANT_ACCESS_DENIED');
                 }
-                else if (!user.is_super_admin) {
-                    throw ApiError_1.ApiError.forbidden('You do not belong to the requested organization.');
+                if (found.member_status !== 'ACTIVE') {
+                    throw ApiError_1.ApiError.forbidden('Your account in this organization has been suspended. Please contact your administrator.', 'MEMBERSHIP_INACTIVE');
                 }
+                // Do NOT block login if org is suspended or license expired; allow login so user can see suspended screen and access public catalog
+                role = found.role_id;
+                activeOrgMeta = found;
             }
             else {
-                activeOrgId = memberRes.rows[0].organization_id;
-                role = memberRes.rows[0].role_id;
-                activeOrgMeta = memberRes.rows[0];
+                const activeMembers = allMembersRes.rows.filter((m) => m.member_status === 'ACTIVE' &&
+                    m.org_status === 'ACTIVE' &&
+                    m.license_is_active !== false &&
+                    (!m.license_end_date || new Date(m.license_end_date).getTime() >= Date.now()));
+                if (activeMembers.length > 0) {
+                    activeOrgId = activeMembers[0].organization_id;
+                    role = activeMembers[0].role_id;
+                    activeOrgMeta = activeMembers[0];
+                }
+                else {
+                    // If no fully active orgs, find any member whose personal account is active (even if org is suspended or expired)
+                    const validMember = allMembersRes.rows.find((m) => m.member_status === 'ACTIVE');
+                    if (validMember) {
+                        activeOrgId = validMember.organization_id;
+                        role = validMember.role_id;
+                        activeOrgMeta = validMember;
+                    }
+                    else {
+                        const suspendedMember = allMembersRes.rows.find((m) => m.member_status === 'SUSPENDED' || m.member_status === 'INACTIVE');
+                        if (suspendedMember) {
+                            throw ApiError_1.ApiError.forbidden('Your account has been suspended. Please contact your organization administrator.', 'MEMBERSHIP_INACTIVE');
+                        }
+                        throw ApiError_1.ApiError.forbidden('Your account has no organization access.', 'NO_ACTIVE_ORGANIZATION');
+                    }
+                }
+            }
+        }
+        else {
+            // Super Admin: allow login, pick requested or first org for convenience if available
+            if (activeOrgId) {
+                const found = allMembersRes.rows.find((m) => m.organization_id === activeOrgId);
+                if (found) {
+                    activeOrgMeta = found;
+                }
+            }
+            else if (allMembersRes.rowCount > 0) {
+                activeOrgId = allMembersRes.rows[0].organization_id;
+                activeOrgMeta = allMembersRes.rows[0];
             }
         }
         const defaultFullPermissions = {
@@ -83,6 +128,7 @@ class AuthService {
             can_manage_courses: true,
             can_manage_campaigns: true,
             can_manage_staff: true,
+            can_manage_bulk_staff: true,
             can_view_reports: true,
         };
         let permissions = {
@@ -91,6 +137,7 @@ class AuthService {
             can_manage_courses: false,
             can_manage_campaigns: false,
             can_manage_staff: false,
+            can_manage_bulk_staff: false,
             can_view_reports: false,
         };
         let activePerms = activeOrgMeta?.permissions;
@@ -110,11 +157,14 @@ class AuthService {
             if (permissions.can_manage_campaigns) {
                 permissions.can_manage_courses = true;
             }
+            if (permissions.can_manage_bulk_staff) {
+                permissions.can_manage_staff = true;
+            }
         }
         // Record Login in Audit Logs
         try {
             await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.audit_logs (organization_id, user_id, action, resource, resource_id, ip_address, metadata)
-         VALUES ($1, $2, 'USER_LOGIN', 'users', $2, $3, $4)`, [
+         VALUES ($1::uuid, $2::uuid, 'USER_LOGIN', 'users', $2::text, $3, $4::jsonb)`, [
                 activeOrgId || null,
                 user.id,
                 clientIp || null,
@@ -152,13 +202,17 @@ class AuthService {
                 activeOrganizationSlug: activeOrgMeta?.organization_slug || null,
                 role,
                 permissions,
+                status: activeOrgMeta?.member_status || 'ACTIVE',
+                orgStatus: activeOrgMeta?.org_status || 'ACTIVE',
+                organizationStatus: activeOrgMeta?.org_status || 'ACTIVE',
                 mustResetPassword: Boolean(user.must_reset_password),
                 lastLoginIp: clientIp || null,
                 lastLoginAt: DateTimeUtils_1.DateTimeUtils.toUtcIsoString(nowUtc),
-                lastLoginAtIst: DateTimeUtils_1.DateTimeUtils.formatUtcToIst(nowUtc),
                 sessionId: newSessionId,
             },
-            organizations: memberRes.rows.map((m) => ({
+            organizations: allMembersRes.rows
+                .filter((m) => m.member_status === 'ACTIVE' && m.org_status === 'ACTIVE')
+                .map((m) => ({
                 id: m.organization_id,
                 name: m.organization_name,
                 slug: m.organization_slug,
@@ -179,19 +233,28 @@ class AuthService {
             throw ApiError_1.ApiError.conflict('An account with this email address already exists.', 'EMAIL_EXISTS');
         }
         const passwordHash = await PasswordUtils_1.PasswordUtils.hashPassword(data.password);
-        const insertRes = await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.users (email, password_hash, first_name, last_name, phone, is_active, email_verified)
-       VALUES ($1, $2, $3, $4, $5, TRUE, TRUE)
-       RETURNING id, email, first_name, last_name`, [emailNorm, passwordHash, data.firstName, data.lastName, data.phone || null]);
-        const newUser = insertRes.rows[0];
-        // If organization is specified directly or via slug/code, enroll as student
+        // Resolve target organization and prefix
         let targetOrgId = data.organizationId;
+        let orgPrefix = 'SYS';
         if (!targetOrgId && (data.organizationSlug || data.organizationCode)) {
             const lookup = (data.organizationSlug || data.organizationCode).trim();
-            const orgLookup = await (0, connection_1.executeQuery)(`SELECT id FROM ${this.schema}.organizations WHERE (slug ILIKE $1 OR invite_code ILIKE $1 OR id::text = $1) AND status = 'ACTIVE'`, [lookup]);
+            const orgLookup = await (0, connection_1.executeQuery)(`SELECT id, org_prefix FROM ${this.schema}.organizations WHERE (slug ILIKE $1 OR invite_code ILIKE $1 OR id::text = $1) AND status = 'ACTIVE'`, [lookup]);
             if (orgLookup.rowCount > 0) {
                 targetOrgId = orgLookup.rows[0].id;
+                orgPrefix = orgLookup.rows[0].org_prefix;
             }
         }
+        else if (targetOrgId) {
+            const orgLookup = await (0, connection_1.executeQuery)(`SELECT org_prefix FROM ${this.schema}.organizations WHERE id = $1 AND status = 'ACTIVE'`, [targetOrgId]);
+            if (orgLookup.rowCount > 0) {
+                orgPrefix = orgLookup.rows[0].org_prefix;
+            }
+        }
+        const businessPrefix = orgPrefix + 'STD';
+        const insertRes = await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.users (business_id, email, password_hash, first_name, last_name, phone, is_active, email_verified)
+       VALUES (${this.schema}.generate_business_id($1), $2, $3, $4, $5, $6, TRUE, TRUE)
+       RETURNING id, business_id, email, first_name, last_name`, [businessPrefix, emailNorm, passwordHash, data.firstName, data.lastName, data.phone || null]);
+        const newUser = insertRes.rows[0];
         if (targetOrgId) {
             await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.organization_members (organization_id, user_id, role_id, status)
          VALUES ($1, $2, 'STUDENT', 'ACTIVE')
@@ -202,11 +265,16 @@ class AuthService {
     async PostRefreshAccessToken(refreshToken) {
         try {
             const decoded = TokenUtils_1.TokenUtils.verifyRefreshToken(refreshToken);
-            const userRes = await (0, connection_1.executeQuery)(`SELECT id, email, is_super_admin, is_active FROM ${this.schema}.users WHERE id = $1`, [decoded.userId]);
+            const userRes = await (0, connection_1.executeQuery)(`SELECT id, email, is_super_admin, is_active, current_session_id, must_reset_password FROM ${this.schema}.users WHERE id = $1`, [decoded.userId]);
             if (userRes.rowCount === 0 || !userRes.rows[0].is_active) {
                 throw ApiError_1.ApiError.unauthorized('Invalid or expired refresh token.');
             }
             const user = userRes.rows[0];
+            // Session Invalidation: If current_session_id is NULL (e.g. cleared by password reset or user logout),
+            // do not mint new access tokens for terminated sessions.
+            if (!user.is_super_admin && !user.current_session_id) {
+                throw ApiError_1.ApiError.unauthorized('Your session has ended because your password was reset or your account was logged into from another device.', 'SESSION_TERMINATED');
+            }
             const memberRes = await (0, connection_1.executeQuery)(`SELECT organization_id, role_id FROM ${this.schema}.organization_members WHERE user_id = $1 AND status = 'ACTIVE' LIMIT 1`, [user.id]);
             const activeOrgId = memberRes.rows[0]?.organization_id;
             const role = user.is_super_admin ? 'SUPER_ADMIN' : memberRes.rows[0]?.role_id || 'STUDENT';
@@ -216,29 +284,49 @@ class AuthService {
                 isSuperAdmin: user.is_super_admin,
                 activeOrganizationId: activeOrgId,
                 role,
+                sessionId: user.current_session_id,
             });
             return {
                 accessToken: newAccessToken,
                 expiresIn: environment_1.EnvironmentConfig.jwt.accessExpiresIn,
             };
         }
-        catch {
+        catch (err) {
+            if (err instanceof ApiError_1.ApiError) {
+                throw err;
+            }
             throw ApiError_1.ApiError.unauthorized('Invalid or expired refresh session.', 'REFRESH_TOKEN_EXPIRED');
         }
     }
     async GetAuthenticatedUserProfile(userId, activeOrgId) {
-        const res = await (0, connection_1.executeQuery)(`SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.avatar_url, u.is_super_admin,
+        const res = await (0, connection_1.executeQuery)(`SELECT u.id, u.email, u.first_name, u.last_name, u.phone, u.avatar_url, u.is_super_admin, u.is_active,
               u.last_login_at, u.last_login_ip, u.current_session_id, u.must_reset_password, u.created_at,
-              om.organization_id, om.role_id, om.permissions as member_permissions
+              om.organization_id, om.role_id, om.status as member_status, om.permissions as member_permissions,
+              o.name as org_name, o.status as org_status, o.license_is_active, o.license_end_date
        FROM ${this.schema}.users u
-       LEFT JOIN ${this.schema}.organization_members om ON om.user_id = u.id AND om.status = 'ACTIVE'
-         ${activeOrgId ? 'AND om.organization_id = $2' : ''}
+       LEFT JOIN ${this.schema}.organization_members om ON om.user_id = u.id ${activeOrgId ? 'AND om.organization_id = $2' : ''}
+       LEFT JOIN ${this.schema}.organizations o ON o.id = om.organization_id
        WHERE u.id = $1
+       ORDER BY om.created_at ASC
        LIMIT 1`, activeOrgId ? [userId, activeOrgId] : [userId]);
         if (res.rowCount === 0) {
             throw ApiError_1.ApiError.notFound('User profile not found.');
         }
         const row = res.rows[0];
+        if (!row.is_super_admin) {
+            if (row.is_active === false) {
+                throw ApiError_1.ApiError.forbidden('Your account is currently inactive or suspended.', 'ACCOUNT_INACTIVE');
+            }
+            if (row.member_status && (row.member_status === 'SUSPENDED' || row.member_status === 'INACTIVE')) {
+                throw ApiError_1.ApiError.forbidden('Your account in this organization has been suspended.', 'MEMBERSHIP_INACTIVE');
+            }
+            if (row.org_status && (row.org_status === 'SUSPENDED' || row.org_status === 'INACTIVE')) {
+                throw ApiError_1.ApiError.forbidden('This organization has been suspended or is inactive.', 'ORGANIZATION_INACTIVE');
+            }
+            if (row.license_is_active === false || (row.license_end_date && new Date(row.license_end_date).getTime() < Date.now())) {
+                throw ApiError_1.ApiError.forbidden('This organization\'s license has expired.', 'ORGANIZATION_LICENSE_EXPIRED');
+            }
+        }
         const isOwnerOrAdmin = row.is_super_admin || ['ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN'].includes(row.role_id);
         const defaultFullPermissions = {
             can_edit_students: true,
@@ -268,15 +356,26 @@ class AuthService {
             };
         return {
             ...row,
+            // Strip internal session token — never expose to client
+            current_session_id: undefined,
+            avatarUrl: row.avatar_url || null,
+            avatar_url: row.avatar_url || null,
+            firstName: row.first_name,
+            lastName: row.last_name,
+            status: row.member_status || 'ACTIVE',
+            org_status: row.org_status || 'ACTIVE',
+            organization_name: row.org_name || null,
             permissions,
             mustResetPassword: Boolean(row.must_reset_password),
             lastLoginIp: row.last_login_ip || null,
             lastLoginAt: row.last_login_at ? DateTimeUtils_1.DateTimeUtils.toUtcIsoString(row.last_login_at) : null,
             lastLoginAtUtc: row.last_login_at ? DateTimeUtils_1.DateTimeUtils.toUtcIsoString(row.last_login_at) : null,
-            lastLoginAtIst: row.last_login_at ? DateTimeUtils_1.DateTimeUtils.formatUtcToIst(row.last_login_at) : null,
         };
     }
-    async PostResetFirstTimePassword(userId, newPassword, activeOrgId) {
+    async PostResetFirstTimePassword(userId, newPassword, activeOrgId, clientIp) {
+        if ((0, ClientIpResolver_1.isLoopbackIp)(clientIp)) {
+            clientIp = await (0, ClientIpResolver_1.FetchPublicIp)();
+        }
         if (!newPassword || newPassword.trim().length < 6) {
             throw ApiError_1.ApiError.badRequest('New password must be at least 6 characters long.');
         }
@@ -297,10 +396,11 @@ class AuthService {
        WHERE id = $2`, [hash, userId]);
         // Audit log
         try {
-            await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.audit_logs (organization_id, user_id, action, resource, resource_id, metadata)
-         VALUES ($1, $2, 'FIRST_TIME_PASSWORD_RESET', 'users', $2, $3)`, [
+            await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.audit_logs (organization_id, user_id, action, resource, resource_id, ip_address, metadata)
+         VALUES ($1::uuid, $2::uuid, 'FIRST_TIME_PASSWORD_RESET', 'users', $2::text, $3::text, $4::jsonb)`, [
                 activeOrgId || null,
                 userId,
+                clientIp,
                 JSON.stringify({
                     email: user.email,
                     name: `${user.first_name} ${user.last_name}`.trim(),
@@ -354,14 +454,25 @@ class AuthService {
         return res.rows;
     }
     async PostSwitchActiveOrganization(userId, targetOrgId) {
-        const memberRes = await (0, connection_1.executeQuery)(`SELECT om.role_id, o.name, o.slug
+        const memberRes = await (0, connection_1.executeQuery)(`SELECT om.role_id, om.status as member_status, o.name, o.slug, o.status as org_status, o.license_is_active, o.license_end_date
        FROM ${this.schema}.organization_members om
        JOIN ${this.schema}.organizations o ON o.id = om.organization_id
-       WHERE om.user_id = $1 AND om.organization_id = $2 AND om.status = 'ACTIVE'`, [userId, targetOrgId]);
-        const userRes = await (0, connection_1.executeQuery)(`SELECT email, is_super_admin FROM ${this.schema}.users WHERE id = $1`, [userId]);
+       WHERE om.user_id = $1 AND om.organization_id = $2`, [userId, targetOrgId]);
+        const userRes = await (0, connection_1.executeQuery)(`SELECT email, is_super_admin, current_session_id FROM ${this.schema}.users WHERE id = $1`, [userId]);
         const user = userRes.rows[0];
         if (memberRes.rowCount === 0 && !user.is_super_admin) {
             throw ApiError_1.ApiError.forbidden('You do not belong to this organization.');
+        }
+        if (memberRes.rowCount > 0 && !user.is_super_admin) {
+            if (memberRes.rows[0].member_status !== 'ACTIVE') {
+                throw ApiError_1.ApiError.forbidden('Your account in this organization has been suspended.', 'MEMBERSHIP_INACTIVE');
+            }
+            if (memberRes.rows[0].org_status !== 'ACTIVE') {
+                throw ApiError_1.ApiError.forbidden(`Organization "${memberRes.rows[0].name}" has been ${memberRes.rows[0].org_status.toLowerCase()}. You cannot switch to this organization.`, 'ORGANIZATION_INACTIVE');
+            }
+            if (memberRes.rows[0].license_is_active === false || (memberRes.rows[0].license_end_date && new Date(memberRes.rows[0].license_end_date).getTime() < Date.now())) {
+                throw ApiError_1.ApiError.forbidden(`Organization "${memberRes.rows[0].name}" license has expired. You cannot switch to this organization.`, 'ORGANIZATION_LICENSE_EXPIRED');
+            }
         }
         const role = user.is_super_admin ? 'SUPER_ADMIN' : memberRes.rows[0].role_id;
         const newAccessToken = TokenUtils_1.TokenUtils.generateAccessToken({
@@ -370,12 +481,43 @@ class AuthService {
             isSuperAdmin: user.is_super_admin,
             activeOrganizationId: targetOrgId,
             role,
+            sessionId: user.current_session_id,
         });
         return {
             activeOrganizationId: targetOrgId,
             role,
             accessToken: newAccessToken,
         };
+    }
+    async UpdateUserProfile(userId, data, activeOrgId) {
+        const fields = [];
+        const params = [userId];
+        if (data.firstName !== undefined) {
+            params.push(data.firstName.trim());
+            fields.push(`first_name = $${params.length}`);
+        }
+        if (data.lastName !== undefined) {
+            params.push(data.lastName.trim());
+            fields.push(`last_name = $${params.length}`);
+        }
+        if (data.phone !== undefined) {
+            params.push(data.phone ? data.phone.trim() : null);
+            fields.push(`phone = $${params.length}`);
+        }
+        if (data.avatarUrl !== undefined) {
+            params.push(data.avatarUrl ? data.avatarUrl.trim() : null);
+            fields.push(`avatar_url = $${params.length}`);
+        }
+        if (fields.length > 0) {
+            params.push(new Date());
+            fields.push(`updated_at = $${params.length}`);
+            await (0, connection_1.executeQuery)(`UPDATE ${this.schema}.users SET ${fields.join(', ')} WHERE id = $1`, params);
+        }
+        return this.GetAuthenticatedUserProfile(userId, activeOrgId);
+    }
+    async DeleteProfileAvatar(userId, activeOrgId) {
+        await (0, connection_1.executeQuery)(`UPDATE ${this.schema}.users SET avatar_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [userId]);
+        return this.GetAuthenticatedUserProfile(userId, activeOrgId);
     }
 }
 exports.AuthService = AuthService;

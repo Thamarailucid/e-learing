@@ -42,7 +42,34 @@ class OrganizationController {
         try {
             const orgId = req.organizationId;
             const data = await OrganizationService_1.organizationService.GetOrganizationDetails(orgId);
-            res.json(ApiResponse_1.ApiResponse.success('Organization details retrieved.', data));
+            // Role-based response filtering — strip sensitive fields for non-admin roles
+            const role = req.user?.role || '';
+            const isSuperAdmin = req.user?.isSuperAdmin === true;
+            const isAdminLevel = isSuperAdmin || ['ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN'].includes(role);
+            if (isAdminLevel) {
+                // Admins & owners get full payload
+                res.json(ApiResponse_1.ApiResponse.success('Organization details retrieved.', data));
+            }
+            else {
+                // Students, instructors, staff — only get branding + minimal info
+                const filtered = {
+                    id: data.id,
+                    name: data.name,
+                    slug: data.slug,
+                    domain: data.domain,
+                    logo_url: data.logo_url,
+                    favicon_url: data.favicon_url,
+                    status: data.status,
+                };
+                // If org allows showing plan tier to non-admin users, include limited license info
+                if (data.show_plan_tier_to_org) {
+                    filtered.plan_type = data.plan_type;
+                    filtered.license_status = data.license_status;
+                    filtered.is_expiring_soon = data.is_expiring_soon;
+                    filtered.days_remaining = data.days_remaining;
+                }
+                res.json(ApiResponse_1.ApiResponse.success('Organization details retrieved.', filtered));
+            }
         }
         catch (err) {
             next(err);

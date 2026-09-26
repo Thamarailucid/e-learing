@@ -5,6 +5,7 @@ const connection_1 = require("../../database/connection");
 const environment_1 = require("../../config/environment");
 const ApiError_1 = require("../../utils/ApiError");
 const DateTimeUtils_1 = require("../../utils/DateTimeUtils");
+const ClientIpResolver_1 = require("../../utils/ClientIpResolver");
 class CampaignService {
     schema = environment_1.EnvironmentConfig.database.schema;
     /**
@@ -67,7 +68,6 @@ class CampaignService {
             creator_name: creatorName,
             creator_email: creatorEmail,
             expires_at_utc: campaign.expires_at ? DateTimeUtils_1.DateTimeUtils.toUtcIsoString(campaign.expires_at) : null,
-            expires_at_ist: campaign.expires_at ? DateTimeUtils_1.DateTimeUtils.formatUtcToIst(campaign.expires_at) : null,
         };
     }
     /**
@@ -89,9 +89,7 @@ class CampaignService {
             remaining_redemptions: Math.max(0, row.max_redemptions - row.current_redemptions),
             is_expired: row.expires_at ? new Date(row.expires_at) < new Date() : false,
             expires_at_utc: row.expires_at ? DateTimeUtils_1.DateTimeUtils.toUtcIsoString(row.expires_at) : null,
-            expires_at_ist: row.expires_at ? DateTimeUtils_1.DateTimeUtils.formatUtcToIst(row.expires_at) : null,
             created_at_utc: DateTimeUtils_1.DateTimeUtils.toUtcIsoString(row.created_at),
-            created_at_ist: DateTimeUtils_1.DateTimeUtils.formatUtcToIst(row.created_at),
         }));
     }
     /**
@@ -129,7 +127,6 @@ class CampaignService {
                 currentRedemptions: item.current_redemptions,
                 remainingSeats: Math.max(0, item.max_redemptions - item.current_redemptions),
                 expiresAtUtc: item.expires_at ? DateTimeUtils_1.DateTimeUtils.toUtcIsoString(item.expires_at) : null,
-                expiresAtIst: item.expires_at ? DateTimeUtils_1.DateTimeUtils.formatUtcToIst(item.expires_at) : null,
                 isActive: item.is_active,
                 isExpired,
                 isFull,
@@ -161,6 +158,9 @@ class CampaignService {
      * Auto-enrolls student into organization and the private course.
      */
     async RedeemCampaignLink(userId, inviteCode, clientIp) {
+        if ((0, ClientIpResolver_1.isLoopbackIp)(clientIp)) {
+            clientIp = await (0, ClientIpResolver_1.FetchPublicIp)();
+        }
         const codeNorm = inviteCode.toUpperCase().trim();
         // 1. Fetch Campaign Link
         const campRes = await (0, connection_1.executeQuery)(`SELECT * FROM ${this.schema}.course_campaign_links WHERE invite_code = $1`, [codeNorm]);
@@ -222,7 +222,7 @@ class CampaignService {
                 campaign.organization_id,
                 userId,
                 campaign.id,
-                clientIp || '127.0.0.1',
+                clientIp,
                 JSON.stringify({
                     courseId: campaign.course_id,
                     inviteCode: campaign.invite_code,
@@ -252,7 +252,6 @@ class CampaignService {
         return res.rows.map((r) => ({
             ...r,
             redeemed_at_utc: DateTimeUtils_1.DateTimeUtils.toUtcIsoString(r.redeemed_at),
-            redeemed_at_ist: DateTimeUtils_1.DateTimeUtils.formatUtcToIst(r.redeemed_at),
         }));
     }
     /**

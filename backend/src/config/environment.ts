@@ -100,11 +100,11 @@ export const EnvironmentConfig: IEnvironmentConfig = {
       certificatesPath: process.env.LOCAL_CERTIFICATE_STORAGE_PATH || './storage/certificates',
     },
     s3: {
-      bucketName: process.env.S3_BUCKET_NAME || '',
-      region: process.env.S3_REGION || '',
-      accessKeyId: process.env.S3_ACCESS_KEY_ID || '',
-      secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || '',
-      endpoint: process.env.S3_ENDPOINT,
+      bucketName: process.env.AWS_S3_BUCKET || process.env.S3_BUCKET_NAME || 'gym-managment-doc',
+      region: process.env.AWS_REGION || process.env.S3_REGION || 'ap-south-1',
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID || process.env.S3_ACCESS_KEY_ID || '',
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || process.env.S3_SECRET_ACCESS_KEY || '',
+      endpoint: process.env.AWS_ENDPOINT || process.env.S3_ENDPOINT,
     },
   },
   redis: {

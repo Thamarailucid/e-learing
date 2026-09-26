@@ -4,6 +4,7 @@ exports.staffInviteController = exports.StaffInviteController = void 0;
 const zod_1 = require("zod");
 const StaffInviteService_1 = require("./StaffInviteService");
 const ApiResponse_1 = require("../../utils/ApiResponse");
+const ClientIpResolver_1 = require("../../utils/ClientIpResolver");
 const CreateStaffInviteSchema = zod_1.z.object({
     title: zod_1.z.string().min(2, 'Title is required (minimum 2 characters).'),
     roleId: zod_1.z.enum(['ORGANIZATION_ADMIN', 'MANAGER', 'INSTRUCTOR', 'CONTENT_MANAGER', 'REVIEWER', 'SUPPORT_STAFF']),
@@ -79,7 +80,7 @@ class StaffInviteController {
     async RegisterStaffViaInvite(req, res, next) {
         try {
             const parsed = RegisterStaffViaInviteSchema.parse(req.body);
-            const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket.remoteAddress || '127.0.0.1';
+            const clientIp = await (0, ClientIpResolver_1.ResolveRequestClientIp)(req);
             const result = await StaffInviteService_1.staffInviteService.RegisterStaffViaInvite(parsed.inviteCode, parsed, clientIp);
             res.status(201).json(ApiResponse_1.ApiResponse.success('Staff account registered successfully. Welcome to the academy team!', result));
         }

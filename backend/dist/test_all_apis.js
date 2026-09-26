@@ -110,7 +110,7 @@ async function runApiAudit() {
         expectedStatus: 200,
         success: ownerLogin.status === 200,
     });
-    const ownerToken = ownerLogin.data?.data?.tokens?.accessToken;
+    let ownerToken = ownerLogin.data?.data?.tokens?.accessToken;
     const ownerOrgId = ownerLogin.data?.data?.user?.activeOrganizationId;
     const meRes = await request('GET', '/auth/GetAuthenticatedUserProfile', undefined, adminToken);
     results.push({
@@ -173,6 +173,21 @@ async function runApiAudit() {
             expectedStatus: 200,
             success: resetOwnerRes.status === 200 && !!resetOwnerRes.data?.data?.newPassword,
             message: `Reset owner: ${resetOwnerRes.data?.data?.ownerEmail} for ${resetOwnerRes.data?.data?.organizationName}`,
+        });
+        // Owner Logs In with New Password
+        const ownerLoginAfterReset = await request('POST', '/auth/PostLoginUser', {
+            email: 'owner@apexacademy.com',
+            password: 'OrgOwner@2026!',
+            clearPreviousSession: true,
+        });
+        ownerToken = ownerLoginAfterReset.data?.data?.tokens?.accessToken;
+        results.push({
+            name: 'Owner Login with New Password succeeds without quarantine',
+            endpoint: '/auth/PostLoginUser',
+            method: 'POST',
+            status: ownerLoginAfterReset.status,
+            expectedStatus: 200,
+            success: ownerLoginAfterReset.status === 200 && Boolean(ownerToken),
         });
     }
     const saLogs = await request('GET', '/superadmin/GetPlatformAuditLogList', undefined, adminToken);
@@ -655,7 +670,7 @@ async function runApiAudit() {
         password: staffGeneratedPwd,
         clearPreviousSession: true,
     });
-    const staffToken = staffLoginRes.data?.data?.tokens?.accessToken;
+    const meeraTempToken = staffLoginRes.data?.data?.tokens?.accessToken;
     results.push({
         name: 'Staff Login with Generated Password',
         endpoint: '/auth/PostLoginUser (Staff)',
@@ -664,6 +679,9 @@ async function runApiAudit() {
         expectedStatus: 200,
         success: staffLoginRes.status === 200 && staffLoginRes.data?.data?.user?.permissions?.can_edit_students === false,
     });
+    // Staff completes mandatory password reset to clear quarantine
+    const staffResetPerm = await request('POST', '/auth/PostResetFirstTimePassword', { newPassword: 'PermanentMeeraPass@2026!' }, meeraTempToken, ownerOrgId);
+    const staffToken = staffResetPerm.data?.data?.tokens?.accessToken || meeraTempToken;
     // 13.8 Switch OFF Enforcement (Negative Test): Staff calling UpdateStudentDetails must get 403 Forbidden!
     const forbiddenCallRes = await request('PUT', '/students/UpdateStudentDetails', {
         studentUserId: createdStudentId,
@@ -1108,16 +1126,19 @@ async function runApiAudit() {
         email: campaignStaffEmail,
         password: 'StaffPassword@123!',
     });
-    const campaignStaffToken = campaignStaffLoginRes.data?.data?.tokens?.accessToken;
+    const tempCampaignStaffToken = campaignStaffLoginRes.data?.data?.tokens?.accessToken;
     results.push({
         name: 'Staff Login with Temporary Password (mustResetPassword flag verified)',
         endpoint: '/auth/PostLoginUser',
         method: 'POST',
         status: campaignStaffLoginRes.status,
         expectedStatus: 200,
-        success: campaignStaffLoginRes.status === 200 && Boolean(campaignStaffToken) && campaignStaffLoginRes.data?.data?.user?.mustResetPassword === true,
+        success: campaignStaffLoginRes.status === 200 && Boolean(tempCampaignStaffToken) && campaignStaffLoginRes.data?.data?.user?.mustResetPassword === true,
         message: `mustResetPassword: ${campaignStaffLoginRes.data?.data?.user?.mustResetPassword}`,
     });
+    // Staff completes mandatory password reset to clear quarantine
+    const campaignStaffResetRes = await request('POST', '/auth/PostResetFirstTimePassword', { newPassword: 'StaffPermanentCampaign@2026!' }, tempCampaignStaffToken, ownerOrgId);
+    const campaignStaffToken = campaignStaffResetRes.data?.data?.tokens?.accessToken || tempCampaignStaffToken;
     // 15.17 Staff without can_manage_campaigns blocked from creating campaigns (403 Forbidden)
     const campaignStaffUnauthorizedCreateRes = await request('POST', `/campaigns/CreateCampaignLink/${privateCourseId}`, {
         targetInstitution: 'Unauthorized College',
@@ -1401,15 +1422,18 @@ async function runApiAudit() {
         password: paInitialPwd,
         clearPreviousSession: true,
     });
-    const paToken = paLoginRes.data?.data?.tokens?.accessToken;
+    const tempPaToken = paLoginRes.data?.data?.tokens?.accessToken;
     results.push({
         name: 'PA Login with Full Operational Credentials',
         endpoint: '/auth/PostLoginUser (PA)',
         method: 'POST',
         status: paLoginRes.status,
         expectedStatus: 200,
-        success: paLoginRes.status === 200 && Boolean(paToken),
+        success: paLoginRes.status === 200 && Boolean(tempPaToken),
     });
+    // PA completes mandatory password reset to clear quarantine
+    const paResetPermRes = await request('POST', '/auth/PostResetFirstTimePassword', { newPassword: 'PAPermanentPass@2026!' }, tempPaToken, ownerOrgId);
+    const paToken = paResetPermRes.data?.data?.tokens?.accessToken || tempPaToken;
     // 17.4 Negative Test: PA attempts to modify the Primary Owner -> MUST be 403 Forbidden!
     const paEditOwnerAttempt = await request('PUT', `/staff/UpdateStaffMember/${ownerUserId}`, {
         firstName: 'Hacked Owner Name',
@@ -1490,6 +1514,153 @@ async function runApiAudit() {
         expectedStatus: 200,
         success: ownerResetPaPwdRes.status === 200 && Boolean(ownerResetPaPwdRes.data?.data?.temporaryPassword),
         message: `New Password: ${ownerResetPaPwdRes.data?.data?.temporaryPassword}`,
+    });
+    // 18. Page Control Rights: Bulk Staff & User Onboarding Links & QR (can_manage_bulk_staff)
+    console.log('\n--- 18. Page Control Rights: Bulk Staff Links & QR (can_manage_bulk_staff) ---');
+    // 18.1 Verify can_manage_bulk_staff exists in GetRolePermissionsList
+    const roleListRes = await request('GET', '/staff/GetRolePermissionsList', undefined, currentOwnerToken, ownerOrgId);
+    const adminTemplate = roleListRes.data?.data?.find((r) => r.roleId === 'ORGANIZATION_ADMIN');
+    const instructorTemplate = roleListRes.data?.data?.find((r) => r.roleId === 'INSTRUCTOR');
+    results.push({
+        name: 'GetRolePermissionsList includes can_manage_bulk_staff for all roles',
+        endpoint: '/staff/GetRolePermissionsList',
+        method: 'GET',
+        status: roleListRes.status,
+        expectedStatus: 200,
+        success: roleListRes.status === 200 &&
+            adminTemplate?.permissions?.can_manage_bulk_staff === true &&
+            instructorTemplate?.permissions?.can_manage_bulk_staff === false,
+        message: `Admin: ${adminTemplate?.permissions?.can_manage_bulk_staff} | Instructor: ${instructorTemplate?.permissions?.can_manage_bulk_staff}`,
+    });
+    // 18.2 Role Template Dependency Gating: Enabling can_manage_bulk_staff auto-enables can_manage_staff
+    const roleDepGatingRes2 = await request('PUT', '/staff/UpdateRolePermissions/REVIEWER', {
+        permissions: {
+            can_manage_bulk_staff: true,
+        },
+    }, currentOwnerToken, ownerOrgId);
+    const reviewerPerms2 = roleDepGatingRes2.data?.data?.permissions;
+    results.push({
+        name: 'Role Template Dependency Gating: can_manage_bulk_staff forces can_manage_staff',
+        endpoint: '/staff/UpdateRolePermissions/REVIEWER',
+        method: 'PUT',
+        status: roleDepGatingRes2.status,
+        expectedStatus: 200,
+        success: roleDepGatingRes2.status === 200 &&
+            reviewerPerms2?.can_manage_bulk_staff === true &&
+            reviewerPerms2?.can_manage_staff === true,
+        message: `can_manage_bulk_staff: ${reviewerPerms2?.can_manage_bulk_staff} | can_manage_staff: ${reviewerPerms2?.can_manage_staff}`,
+    });
+    // 18.3 Role Template Dependency Gating: Disabling can_manage_staff auto-disables can_manage_bulk_staff
+    const roleDepGatingRes3 = await request('PUT', '/staff/UpdateRolePermissions/REVIEWER', {
+        permissions: {
+            can_manage_staff: false,
+        },
+    }, currentOwnerToken, ownerOrgId);
+    const reviewerPerms3 = roleDepGatingRes3.data?.data?.permissions;
+    results.push({
+        name: 'Role Template Dependency Gating: disabling can_manage_staff forces can_manage_bulk_staff false',
+        endpoint: '/staff/UpdateRolePermissions/REVIEWER',
+        method: 'PUT',
+        status: roleDepGatingRes3.status,
+        expectedStatus: 200,
+        success: roleDepGatingRes3.status === 200 &&
+            reviewerPerms3?.can_manage_staff === false &&
+            reviewerPerms3?.can_manage_bulk_staff === false,
+        message: `can_manage_staff: ${reviewerPerms3?.can_manage_staff} | can_manage_bulk_staff: ${reviewerPerms3?.can_manage_bulk_staff}`,
+    });
+    // 18.4 Create Staff Member with can_manage_bulk_staff: true (auto-enables can_manage_staff: true)
+    const bulkManagerEmail = `bulk_mgr_${Date.now()}@apexacademy.com`;
+    const createBulkMgrRes = await request('POST', '/staff/CreateStaffMember', {
+        email: bulkManagerEmail,
+        firstName: 'Vikram',
+        lastName: 'BulkManager',
+        roleId: 'INSTRUCTOR',
+        password: 'TemporaryBulkMgrPassword123!',
+        permissions: {
+            can_manage_bulk_staff: true,
+        },
+    }, currentOwnerToken, ownerOrgId);
+    const bulkMgrUserId = createBulkMgrRes.data?.data?.user_id;
+    const bulkMgrPerms = createBulkMgrRes.data?.data?.permissions;
+    results.push({
+        name: 'Create Staff Member with can_manage_bulk_staff auto-enables can_manage_staff',
+        endpoint: '/staff/CreateStaffMember',
+        method: 'POST',
+        status: createBulkMgrRes.status,
+        expectedStatus: 201,
+        success: createBulkMgrRes.status === 201 &&
+            bulkMgrPerms?.can_manage_bulk_staff === true &&
+            bulkMgrPerms?.can_manage_staff === true,
+        message: `BulkStaff: ${bulkMgrPerms?.can_manage_bulk_staff} | Staff: ${bulkMgrPerms?.can_manage_staff}`,
+    });
+    // 18.5 Login as the Bulk Staff Manager
+    const bulkMgrLoginRes = await request('POST', '/auth/PostLoginUser', {
+        email: bulkManagerEmail,
+        password: 'TemporaryBulkMgrPassword123!',
+    });
+    const tempBulkMgrToken = bulkMgrLoginRes.data?.data?.tokens?.accessToken;
+    results.push({
+        name: 'Bulk Staff Manager Login & Token Issuance',
+        endpoint: '/auth/PostLoginUser',
+        method: 'POST',
+        status: bulkMgrLoginRes.status,
+        expectedStatus: 200,
+        success: bulkMgrLoginRes.status === 200 && Boolean(tempBulkMgrToken),
+    });
+    // Bulk Staff Manager completes mandatory password reset to clear quarantine
+    const bulkMgrResetRes = await request('POST', '/auth/PostResetFirstTimePassword', { newPassword: 'BulkMgrPermanentPass@2026!' }, tempBulkMgrToken, ownerOrgId);
+    const bulkMgrToken = bulkMgrResetRes.data?.data?.tokens?.accessToken || tempBulkMgrToken;
+    // 18.6 Authorized Staff with can_manage_bulk_staff creates a bulk invite link
+    const bulkStaffInviteRes = await request('POST', '/staff/CreateStaffInviteLink', {
+        title: 'Visiting Guest Lecturers 2026',
+        roleId: 'INSTRUCTOR',
+        maxRegistrations: 200,
+        customInviteCode: `GUEST-LEC-${Date.now().toString().slice(-4)}`,
+        permissions: {
+            can_manage_courses: true,
+        },
+    }, bulkMgrToken, ownerOrgId);
+    results.push({
+        name: 'Authorized Staff with can_manage_bulk_staff creates Staff Invite Link (201)',
+        endpoint: '/staff/CreateStaffInviteLink',
+        method: 'POST (Authorized Staff)',
+        status: bulkStaffInviteRes.status,
+        expectedStatus: 201,
+        success: bulkStaffInviteRes.status === 201 && Boolean(bulkStaffInviteRes.data?.data?.invite_code),
+        message: `Invite Code: ${bulkStaffInviteRes.data?.data?.invite_code}`,
+    });
+    // 18.7 Demote staff member: revoke can_manage_staff -> auto-revokes can_manage_bulk_staff
+    const revokeStaffRes = await request('PUT', `/staff/UpdateStaffMember/${bulkMgrUserId}`, {
+        permissions: {
+            can_manage_staff: false,
+        },
+    }, currentOwnerToken, ownerOrgId);
+    const revokedPerms = revokeStaffRes.data?.data?.permissions;
+    results.push({
+        name: 'Revoking can_manage_staff automatically revokes can_manage_bulk_staff',
+        endpoint: `/staff/UpdateStaffMember/${bulkMgrUserId}`,
+        method: 'PUT',
+        status: revokeStaffRes.status,
+        expectedStatus: 200,
+        success: revokeStaffRes.status === 200 &&
+            revokedPerms?.can_manage_staff === false &&
+            revokedPerms?.can_manage_bulk_staff === false,
+        message: `Staff: ${revokedPerms?.can_manage_staff} | BulkStaff: ${revokedPerms?.can_manage_bulk_staff}`,
+    });
+    // 18.8 Demoted Staff attempting to create staff invite link is blocked (403 Forbidden)
+    const unauthorizedInviteAttempt = await request('POST', '/staff/CreateStaffInviteLink', {
+        title: 'Unauthorized Link Attempt',
+        roleId: 'INSTRUCTOR',
+        maxRegistrations: 10,
+    }, bulkMgrToken, ownerOrgId);
+    results.push({
+        name: 'Staff without can_manage_bulk_staff blocked from creating invite links (403)',
+        endpoint: '/staff/CreateStaffInviteLink',
+        method: 'POST (Unauthorized)',
+        status: unauthorizedInviteAttempt.status,
+        expectedStatus: 403,
+        success: unauthorizedInviteAttempt.status === 403,
+        message: unauthorizedInviteAttempt.data?.message,
     });
     // Print Summary Table
     console.log('\n======================================================');

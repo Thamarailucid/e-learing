@@ -102,7 +102,13 @@ class PublicService {
        ORDER BY order_index ASC`, [course.id]);
         const sections = sectionsRes.rows.map((sec) => ({
             ...sec,
-            lessons: lessonsRes.rows.filter((l) => l.section_id === sec.id),
+            lessons: lessonsRes.rows
+                .filter((l) => l.section_id === sec.id)
+                .map((l) => ({
+                ...l,
+                // Only expose video_url for free preview lessons; strip for all others
+                video_url: l.is_free_preview ? l.video_url : null,
+            })),
         }));
         return {
             course,

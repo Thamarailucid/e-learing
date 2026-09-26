@@ -11,4 +11,5 @@ router.get('/VerifyCertificate/:certificateNumber', (req, res, next) => Certific
 // Protected Certificate Endpoints
 router.post('/GenerateCertificate', AuthenticateRequest_1.AuthenticateRequest, ResolveOrganizationContext_1.ResolveOrganizationContext, (req, res, next) => CertificateController_1.certificateController.GenerateCertificate(req, res, next));
 router.get('/GetStudentCertificateList', AuthenticateRequest_1.AuthenticateRequest, (req, res, next) => CertificateController_1.certificateController.GetStudentCertificateList(req, res, next));
+router.get('/GetStudentCertificateOverview', AuthenticateRequest_1.AuthenticateRequest, (req, res, next) => CertificateController_1.certificateController.GetStudentCertificateOverview(req, res, next));
 exports.CertificateRoutes = router;

@@ -110,7 +110,7 @@ async function InitializeDatabase() {
       role_id VARCHAR(50) NOT NULL REFERENCES ${schema}.roles(id),
       department_id UUID,
       team_id UUID,
-      permissions JSONB DEFAULT '{"can_edit_students":false,"can_reset_student_passwords":false,"can_manage_courses":false,"can_manage_campaigns":false,"can_manage_staff":false,"can_view_reports":false}'::jsonb,
+      permissions JSONB DEFAULT '{"can_edit_students":false,"can_reset_student_passwords":false,"can_manage_courses":false,"can_manage_campaigns":false,"can_manage_staff":false,"can_manage_bulk_staff":false,"can_view_reports":false}'::jsonb,
       status VARCHAR(50) DEFAULT 'ACTIVE',
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -219,6 +219,7 @@ async function InitializeDatabase() {
       document_url TEXT,
       order_index INTEGER DEFAULT 0,
       is_free_preview BOOLEAN DEFAULT FALSE,
+      video_file_size_bytes BIGINT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
@@ -504,7 +505,7 @@ async function InitializeDatabase() {
     ALTER TABLE ${schema}.organization_members ADD COLUMN IF NOT EXISTS department_id UUID;
     ALTER TABLE ${schema}.organization_members ADD COLUMN IF NOT EXISTS team_id UUID;
     ALTER TABLE ${schema}.organization_members ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'ACTIVE';
-    ALTER TABLE ${schema}.organization_members ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{"can_edit_students":false,"can_reset_student_passwords":false,"can_manage_courses":false,"can_manage_staff":false,"can_view_reports":false}'::jsonb;
+    ALTER TABLE ${schema}.organization_members ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{"can_edit_students":false,"can_reset_student_passwords":false,"can_manage_courses":false,"can_manage_campaigns":false,"can_manage_staff":false,"can_manage_bulk_staff":false,"can_view_reports":false}'::jsonb;
 
     -- Organization Theme Settings columns
     ALTER TABLE ${schema}.organization_theme_settings ADD COLUMN IF NOT EXISTS primary_color VARCHAR(50) DEFAULT '#000000';
@@ -563,6 +564,13 @@ async function InitializeDatabase() {
     ALTER TABLE ${schema}.organization_theme_settings ADD COLUMN IF NOT EXISTS certificate_signature_url TEXT;
     ALTER TABLE ${schema}.organization_theme_settings ADD COLUMN IF NOT EXISTS certificate_background_url TEXT;
     ALTER TABLE ${schema}.organization_theme_settings ADD COLUMN IF NOT EXISTS certificate_accent_color VARCHAR(50) DEFAULT '#0f172a';
+
+    -- Student Course Progress Dynamic Resume Tracking
+    ALTER TABLE ${schema}.student_course_progress ADD COLUMN IF NOT EXISTS last_lesson_id UUID;
+    ALTER TABLE ${schema}.student_course_progress ADD COLUMN IF NOT EXISTS last_position_seconds INTEGER DEFAULT 0;
+
+    -- Student Lesson Progress timestamps
+    ALTER TABLE ${schema}.student_lesson_progress ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
   `);
     // 4. Create Performance Indexes
     await (0, connection_1.executeQuery)(`
@@ -588,6 +596,17 @@ async function InitializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_staff_invite_org ON ${schema}.staff_invite_links(organization_id);
     CREATE INDEX IF NOT EXISTS idx_staff_invite_code ON ${schema}.staff_invite_links(invite_code);
     CREATE INDEX IF NOT EXISTS idx_staff_invite_redemptions_user ON ${schema}.staff_invite_redemptions(user_id);
+
+    -- Backfill can_manage_campaigns and can_manage_bulk_staff in permissions JSONB for existing organization_members
+    UPDATE ${schema}.organization_members
+    SET permissions = jsonb_set(
+      jsonb_set(COALESCE(permissions, '{}'::jsonb), '{can_manage_bulk_staff}',
+        CASE WHEN role_id IN ('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN') THEN 'true'::jsonb ELSE 'false'::jsonb END
+      ),
+      '{can_manage_campaigns}',
+      CASE WHEN role_id IN ('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN') OR (permissions->>'can_manage_courses' = 'true') THEN 'true'::jsonb ELSE 'false'::jsonb END
+    )
+    WHERE NOT (permissions ? 'can_manage_bulk_staff') OR NOT (permissions ? 'can_manage_campaigns');
   `);
     // 5. Seed Standard Roles
     const roles = [
@@ -616,6 +635,7 @@ async function InitializeDatabase() {
         { id: 'students:read', name: 'View Students', category: 'Users', description: 'List organization students and view progress' },
         { id: 'students:manage', name: 'Manage Students', category: 'Users', description: 'Enroll, create, and manage student accounts' },
         { id: 'staff:manage', name: 'Manage Staff', category: 'Users', description: 'Invite instructors, admins, and managers' },
+        { id: 'staff:invites', name: 'Bulk Staff Onboarding & QR Links', category: 'Users', description: 'Generate bulk staff registration links and scannable QR codes' },
         { id: 'quizzes:manage', name: 'Manage Quizzes', category: 'Assessments', description: 'Create and edit quizzes and questions' },
         { id: 'quizzes:attempt', name: 'Attempt Quizzes', category: 'Assessments', description: 'Take course quizzes and submit answers' },
         { id: 'certificates:issue', name: 'Issue Certificates', category: 'Certificates', description: 'Generate and verify completion certificates' },
@@ -762,7 +782,9 @@ async function InitializeDatabase() {
         can_edit_students: true,
         can_reset_student_passwords: true,
         can_manage_courses: true,
+        can_manage_campaigns: true,
         can_manage_staff: true,
+        can_manage_bulk_staff: true,
         can_view_reports: true,
     });
     // Attach as ORGANIZATION_OWNER

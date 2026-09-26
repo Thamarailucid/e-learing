@@ -4,6 +4,7 @@ exports.authController = exports.AuthController = void 0;
 const zod_1 = require("zod");
 const AuthService_1 = require("./AuthService");
 const ApiResponse_1 = require("../../utils/ApiResponse");
+const ClientIpResolver_1 = require("../../utils/ClientIpResolver");
 const LoginSchema = zod_1.z.object({
     email: zod_1.z.string().min(3, 'Please provide an email address or username.'),
     password: zod_1.z.string().min(1, 'Password is required.'),
@@ -34,9 +35,7 @@ class AuthController {
     async PostLoginUser(req, res, next) {
         try {
             const parsed = LoginSchema.parse(req.body);
-            const forwarded = req.headers['x-forwarded-for'];
-            const headerIp = typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : undefined;
-            const clientIp = parsed.clientIp || headerIp || req.socket.remoteAddress || req.ip;
+            const clientIp = await (0, ClientIpResolver_1.ResolveRequestClientIp)(req, parsed.clientIp);
             const result = await AuthService_1.authService.PostLoginUser(parsed.email, parsed.password, parsed.organizationId, parsed.clearPreviousSession, clientIp);
             res.json(ApiResponse_1.ApiResponse.success('User authenticated successfully.', result));
         }
@@ -78,7 +77,8 @@ class AuthController {
         try {
             const parsed = ResetFirstTimePasswordSchema.parse(req.body);
             const activeOrgId = req.organizationId || req.body.organizationId;
-            const result = await AuthService_1.authService.PostResetFirstTimePassword(req.user.userId, parsed.newPassword, activeOrgId);
+            const clientIp = await (0, ClientIpResolver_1.ResolveRequestClientIp)(req);
+            const result = await AuthService_1.authService.PostResetFirstTimePassword(req.user.userId, parsed.newPassword, activeOrgId, clientIp);
             res.json(ApiResponse_1.ApiResponse.success(result.message, result));
         }
         catch (err) {
@@ -108,6 +108,27 @@ class AuthController {
         try {
             await AuthService_1.authService.PostLogoutUser(req.user?.userId);
             res.json(ApiResponse_1.ApiResponse.success('User logged out successfully.'));
+        }
+        catch (err) {
+            next(err);
+        }
+    }
+    async UpdateUserProfile(req, res, next) {
+        try {
+            const { firstName, lastName, phone, avatarUrl } = req.body;
+            const activeOrgId = req.organizationId || req.query.organizationId;
+            const result = await AuthService_1.authService.UpdateUserProfile(req.user.userId, { firstName, lastName, phone, avatarUrl }, activeOrgId);
+            res.json(ApiResponse_1.ApiResponse.success('Profile updated successfully.', result));
+        }
+        catch (err) {
+            next(err);
+        }
+    }
+    async DeleteProfileAvatar(req, res, next) {
+        try {
+            const activeOrgId = req.organizationId || req.query.organizationId;
+            const result = await AuthService_1.authService.DeleteProfileAvatar(req.user.userId, activeOrgId);
+            res.json(ApiResponse_1.ApiResponse.success('Profile avatar removed successfully.', result));
         }
         catch (err) {
             next(err);

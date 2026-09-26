@@ -6,7 +6,6 @@ const environment_1 = require("../../config/environment");
 const ApiError_1 = require("../../utils/ApiError");
 const FileStorageFactory_1 = require("../../services/storage/FileStorageFactory");
 const AssetNamingUtils_1 = require("../../utils/AssetNamingUtils");
-const DateTimeUtils_1 = require("../../utils/DateTimeUtils");
 class OrganizationService {
     schema = environment_1.EnvironmentConfig.database.schema;
     storage = FileStorageFactory_1.FileStorageFactory.getInstance();
@@ -37,8 +36,6 @@ class OrganizationService {
             is_expired: isExpired,
             is_expiring_soon: isExpiringSoon,
             days_remaining: daysRemaining,
-            license_start_date_ist: row.license_start_date ? DateTimeUtils_1.DateTimeUtils.formatUtcToIst(row.license_start_date) : null,
-            license_end_date_ist: row.license_end_date ? DateTimeUtils_1.DateTimeUtils.formatUtcToIst(row.license_end_date) : null,
         };
     }
     async UpdateOrganizationDetails(organizationId, data) {

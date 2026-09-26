@@ -87,6 +87,72 @@ class CertificateService {
         const res = await (0, connection_1.executeQuery)(query, params);
         return res.rows;
     }
+    async GetStudentCertificateOverview(userId, organizationId) {
+        // 1. All issued certificates
+        const earnedCertificates = await this.GetStudentCertificateList(userId, organizationId);
+        const earnedCourseIds = earnedCertificates.map((c) => c.course_id);
+        // 2. Claimable courses: 100% completed or all lessons done, but certificate not generated yet
+        let claimableQuery = `
+      SELECT c.id as course_id, c.title as course_title, c.thumbnail_url, c.category, c.level,
+             e.organization_id, o.name as organization_name, o.logo_url as organization_logo_url,
+             scp.progress_percentage, scp.completed_lessons_count, scp.total_lessons_count,
+             scp.completed_at
+      FROM ${this.schema}.enrollments e
+      JOIN ${this.schema}.courses c ON c.id = e.course_id
+      JOIN ${this.schema}.organizations o ON o.id = e.organization_id
+      LEFT JOIN ${this.schema}.student_course_progress scp 
+        ON scp.course_id = c.id AND scp.user_id = e.user_id AND scp.organization_id = e.organization_id
+      WHERE e.user_id = $1 AND e.status = 'ACTIVE'
+        AND (scp.is_completed = TRUE OR (scp.completed_lessons_count >= scp.total_lessons_count AND scp.total_lessons_count > 0))
+    `;
+        const claimableParams = [userId];
+        if (organizationId) {
+            claimableQuery += ` AND e.organization_id = $2`;
+            claimableParams.push(organizationId);
+        }
+        const claimableRes = await (0, connection_1.executeQuery)(claimableQuery, claimableParams);
+        const claimableCourses = claimableRes.rows.filter((c) => !earnedCourseIds.includes(c.course_id));
+        // 3. In-progress courses working towards certification
+        let inProgressQuery = `
+      SELECT c.id as course_id, c.title as course_title, c.thumbnail_url, c.category, c.level,
+             e.organization_id, o.name as organization_name, o.logo_url as organization_logo_url,
+             COALESCE(scp.progress_percentage, 0) as progress_percentage,
+             COALESCE(scp.completed_lessons_count, 0) as completed_lessons_count,
+             COALESCE(scp.total_lessons_count, (SELECT COUNT(*) FROM ${this.schema}.lessons l WHERE l.course_id = c.id), 1) as total_lessons_count,
+             scp.last_activity_at
+      FROM ${this.schema}.enrollments e
+      JOIN ${this.schema}.courses c ON c.id = e.course_id
+      JOIN ${this.schema}.organizations o ON o.id = e.organization_id
+      LEFT JOIN ${this.schema}.student_course_progress scp 
+        ON scp.course_id = c.id AND scp.user_id = e.user_id AND scp.organization_id = e.organization_id
+      WHERE e.user_id = $1 AND e.status = 'ACTIVE'
+        AND (scp.is_completed IS NOT TRUE)
+        AND NOT (scp.completed_lessons_count >= scp.total_lessons_count AND scp.total_lessons_count > 0)
+      ORDER BY COALESCE(scp.last_activity_at, e.enrolled_at) DESC
+    `;
+        const inProgressParams = [userId];
+        if (organizationId) {
+            inProgressQuery += ` AND e.organization_id = $2`;
+            inProgressParams.push(organizationId);
+        }
+        const inProgressRes = await (0, connection_1.executeQuery)(inProgressQuery, inProgressParams);
+        return {
+            earnedCertificates,
+            claimableCourses,
+            inProgressCourses: inProgressRes.rows.map((row) => ({
+                ...row,
+                progress_percentage: parseFloat(row.progress_percentage || '0'),
+                total_lessons_count: parseInt(row.total_lessons_count || '1', 10),
+                completed_lessons_count: parseInt(row.completed_lessons_count || '0', 10),
+                remaining_lessons_count: Math.max(0, parseInt(row.total_lessons_count || '1', 10) - parseInt(row.completed_lessons_count || '0', 10)),
+            })),
+            stats: {
+                totalEarned: earnedCertificates.length,
+                readyToClaim: claimableCourses.length,
+                inProgress: inProgressRes.rows.length,
+            }
+        };
+    }
 }
 exports.CertificateService = CertificateService;
 exports.certificateService = new CertificateService();
