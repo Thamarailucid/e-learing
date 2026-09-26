@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Card, Button, Modal, Form, Input, Select, InputNumber, message, Tag, Upload, Tooltip } from 'antd';
+import { Card, Button, Modal, Form, Input, Select, InputNumber, message, Tag, Upload, Tooltip, Radio } from 'antd';
 import { Plus, Video, FileText, HelpCircle, Check, ArrowLeft, UploadCloud, Clock, Image as ImageIcon, CheckCircle } from 'lucide-react';
 import { ApiClient } from '../../services/api/ApiClient';
 import { RbaPageHeader } from '../../components/common/RbaPageHeader';
@@ -28,6 +28,11 @@ export const CourseBuilderPage: React.FC = () => {
   const [sectionForm] = Form.useForm();
   const [lessonForm] = Form.useForm();
   const [questionForm] = Form.useForm();
+
+  // Local file & video source state for Add Lesson Modal
+  const [selectedLessonFile, setSelectedLessonFile] = useState<File | null>(null);
+  const [videoSourceType, setVideoSourceType] = useState<'upload' | 'url'>('upload');
+  const [lessonContentType, setLessonContentType] = useState<'VIDEO' | 'ARTICLE'>('VIDEO');
 
   // 1. Fetch Course Data
   const { data: course, isLoading } = useQuery({
@@ -71,21 +76,36 @@ export const CourseBuilderPage: React.FC = () => {
   // 3. Add Lesson Mutation
   const addLessonMutation = useMutation({
     mutationFn: async (values: any) => {
-      return ApiClient.post('/courses/CreateLesson', {
+      const contentType = values.contentType || 'VIDEO';
+      const videoUrl = contentType === 'VIDEO' && videoSourceType === 'url' ? values.videoUrl || '' : '';
+
+      const res = await ApiClient.post('/courses/CreateLesson', {
         courseId,
         sectionId: activeSectionId,
         title: values.title,
-        contentType: values.contentType || 'VIDEO',
-        videoUrl: values.videoUrl || '',
+        contentType,
+        videoUrl,
         videoDurationSeconds: values.videoDurationSeconds || 600,
         articleContent: values.articleContent,
       });
+
+      const createdLesson = res.data?.data;
+
+      // If a local video file was selected in the modal, upload directly to S3!
+      if (createdLesson?.id && selectedLessonFile && contentType === 'VIDEO' && videoSourceType === 'upload') {
+        await handleUploadLessonVideo(createdLesson.id, selectedLessonFile);
+      }
+
+      return createdLesson;
     },
     onSuccess: () => {
-      message.success('Lesson added.');
+      message.success(selectedLessonFile ? 'Lesson created and video uploaded to S3!' : 'Lesson added.');
       queryClient.invalidateQueries({ queryKey: ['course-details', courseId] });
       setLessonModalOpen(false);
       lessonForm.resetFields();
+      setSelectedLessonFile(null);
+      setVideoSourceType('upload');
+      setLessonContentType('VIDEO');
     },
   });
 
@@ -434,31 +454,152 @@ export const CourseBuilderPage: React.FC = () => {
 
       {/* Add Lesson Modal */}
       <Modal
-        title="Add Lesson"
+        title="Add Lesson to Module"
         open={lessonModalOpen}
-        onCancel={() => setLessonModalOpen(false)}
+        onCancel={() => {
+          setLessonModalOpen(false);
+          setSelectedLessonFile(null);
+          setVideoSourceType('upload');
+          setLessonContentType('VIDEO');
+          lessonForm.resetFields();
+        }}
         onOk={() => lessonForm.validateFields().then((v) => addLessonMutation.mutate(v))}
         confirmLoading={addLessonMutation.isPending}
+        okText={
+          addLessonMutation.isPending && uploadProgress !== null
+            ? `Uploading to S3... ${uploadProgress}%`
+            : selectedLessonFile
+            ? 'Create & Upload to S3'
+            : 'Add Lesson'
+        }
+        width={560}
       >
-        <Form form={lessonForm} layout="vertical">
-          <Form.Item name="title" label="Lesson Title" rules={[{ required: true }]}>
-            <Input placeholder="e.g. Architecture Overview" />
+        <Form
+          form={lessonForm}
+          layout="vertical"
+          initialValues={{
+            contentType: 'VIDEO',
+            videoDurationSeconds: 600,
+          }}
+          onValuesChange={(changed) => {
+            if (changed.contentType) {
+              setLessonContentType(changed.contentType);
+            }
+          }}
+        >
+          <Form.Item
+            name="title"
+            label="Lesson Title"
+            rules={[{ required: true, message: 'Please enter lesson title' }]}
+          >
+            <Input placeholder="e.g. Architecture Overview & Environment Setup" />
           </Form.Item>
-          <Form.Item name="contentType" label="Content Type" initialValue="VIDEO">
+
+          <Form.Item name="contentType" label="Content Type">
             <Select>
-              <Select.Option value="VIDEO">Video Lecture</Select.Option>
+              <Select.Option value="VIDEO">Video Lecture (MP4 / WebM)</Select.Option>
               <Select.Option value="ARTICLE">Article / Text Note</Select.Option>
             </Select>
           </Form.Item>
-          <Form.Item
-            name="videoUrl"
-            label="Video URL (optional if uploading directly)"
-            tooltip="You can enter an external URL or use the 'Upload Video' button directly on the lesson row"
-          >
-            <Input placeholder="https://... or upload MP4 file after creating lesson" />
-          </Form.Item>
-          <Form.Item name="videoDurationSeconds" label="Estimated Duration (seconds)" initialValue={600}>
-            <InputNumber min={10} max={10800} className="w-full" />
+
+          {lessonContentType === 'VIDEO' && (
+            <div className="mb-4 p-3.5 bg-gray-50 border border-gray-200 rounded-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-gray-700">Video Source</span>
+                <Radio.Group
+                  value={videoSourceType}
+                  onChange={(e) => setVideoSourceType(e.target.value)}
+                  size="small"
+                  optionType="button"
+                  buttonStyle="solid"
+                >
+                  <Radio.Button value="upload">Upload Local Video (S3)</Radio.Button>
+                  <Radio.Button value="url">External Video URL</Radio.Button>
+                </Radio.Group>
+              </div>
+
+              {videoSourceType === 'upload' ? (
+                <div>
+                  <Upload.Dragger
+                    accept="video/mp4,video/webm,video/quicktime,video/*"
+                    showUploadList={false}
+                    beforeUpload={(file) => {
+                      if (!file.type.startsWith('video/') && !file.name.match(/\.(mp4|webm|mov|mkv)$/i)) {
+                        message.error('Please select a valid video file (MP4, WebM, MOV)');
+                        return false;
+                      }
+                      setSelectedLessonFile(file);
+                      if (!lessonForm.getFieldValue('title')) {
+                        const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+                        lessonForm.setFieldValue('title', cleanTitle);
+                      }
+                      return false;
+                    }}
+                    className="!p-4 !bg-white !rounded-lg border-dashed border-2 border-indigo-200 hover:border-indigo-400 cursor-pointer"
+                  >
+                    {selectedLessonFile ? (
+                      <div className="flex items-center justify-between p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+                        <div className="flex items-center gap-2.5 overflow-hidden text-left">
+                          <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+                          <div className="truncate">
+                            <div className="text-xs font-semibold text-gray-900 truncate">
+                              {selectedLessonFile.name}
+                            </div>
+                            <div className="text-[11px] text-gray-500">
+                              {(selectedLessonFile.size / (1024 * 1024)).toFixed(1)} MB • Ready to upload to AWS S3
+                            </div>
+                          </div>
+                        </div>
+                        <Button
+                          size="small"
+                          type="text"
+                          danger
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedLessonFile(null);
+                          }}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="py-2 text-center">
+                        <UploadCloud className="w-8 h-8 text-indigo-500 mx-auto mb-1.5" />
+                        <div className="text-xs font-semibold text-gray-800">
+                          Click or drag video file here to upload directly to S3
+                        </div>
+                        <div className="text-[11px] text-gray-400 mt-0.5">
+                          Supported formats: MP4, WebM, MOV (up to 500MB)
+                        </div>
+                      </div>
+                    )}
+                  </Upload.Dragger>
+                </div>
+              ) : (
+                <Form.Item
+                  name="videoUrl"
+                  label="Direct Video Stream / Embed URL"
+                  rules={[{ required: true, message: 'Please enter the video URL' }]}
+                  className="!mb-0"
+                >
+                  <Input placeholder="https://cdn.example.com/video.mp4 or YouTube / Vimeo" />
+                </Form.Item>
+              )}
+            </div>
+          )}
+
+          {lessonContentType === 'ARTICLE' && (
+            <Form.Item
+              name="articleContent"
+              label="Article / Reading Content"
+              rules={[{ required: true, message: 'Please enter article content' }]}
+            >
+              <Input.TextArea rows={4} placeholder="Type notes or reading instructions for students..." />
+            </Form.Item>
+          )}
+
+          <Form.Item name="videoDurationSeconds" label="Estimated Duration (seconds)">
+            <InputNumber min={10} max={10800} className="w-full" addonAfter="seconds (e.g. 600 = 10 mins)" />
           </Form.Item>
         </Form>
       </Modal>
