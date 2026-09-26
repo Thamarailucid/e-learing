@@ -1,10 +1,20 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 
-const nodeEnv = process.env.NODE_ENV || 'development';
-const envFile = nodeEnv === 'production' ? '.env.production' : '.env.development';
+// 1. Load standard .env if present
+const standardEnv = path.resolve(process.cwd(), '.env');
+if (fs.existsSync(standardEnv)) {
+  dotenv.config({ path: standardEnv });
+}
 
-dotenv.config({ path: path.resolve(process.cwd(), envFile) });
+// 2. Load environment-specific file (.env.production or .env.development)
+const nodeEnv = process.env.NODE_ENV || process.env.APP_ENVIRONMENT || 'development';
+const envFile = path.resolve(process.cwd(), nodeEnv === 'production' ? '.env.production' : '.env.development');
+
+if (fs.existsSync(envFile)) {
+  dotenv.config({ path: envFile, override: true });
+}
 
 export interface IEnvironmentConfig {
   application: {
