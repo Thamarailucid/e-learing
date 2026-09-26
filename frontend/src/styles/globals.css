@@ -36,3 +36,111 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* ==========================================================================
+   Universal Sleek Custom Scrollbars (Vertical & Horizontal)
+   Works across Chrome, Edge, Safari, Firefox, and Ant Design Tables/Modals
+   ========================================================================== */
+
+/* Firefox standard support */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+/* WebKit & Chromium Browsers (Chrome, Edge, Safari, Opera) */
+::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+}
+
+::-webkit-scrollbar-track,
+*::-webkit-scrollbar-track {
+  background: transparent !important;
+  border-radius: 9999px !important;
+}
+
+::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1 !important;
+  border-radius: 9999px !important;
+  border: 1px solid transparent !important;
+  background-clip: content-box !important;
+  transition: background-color 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8 !important;
+}
+
+::-webkit-scrollbar-thumb:active,
+*::-webkit-scrollbar-thumb:active {
+  background-color: #64748b !important;
+}
+
+::-webkit-scrollbar-corner,
+*::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+
+/* Strictly hide native scrollbar arrow buttons on all elements */
+::-webkit-scrollbar-button,
+*::-webkit-scrollbar-button {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* Explicit targeting for Ant Design Tables (Fixes thick grey Windows native horizontal scrollbars) */
+.ant-table-body,
+.ant-table-content,
+.ant-table-container,
+.ant-table-scroll-horizontal,
+.ant-table-header {
+  scrollbar-width: thin !important;
+  scrollbar-color: #cbd5e1 #f8fafc !important;
+}
+
+.ant-table-body::-webkit-scrollbar,
+.ant-table-content::-webkit-scrollbar,
+.ant-table-container::-webkit-scrollbar,
+.ant-table-scroll-horizontal::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+}
+
+.ant-table-body::-webkit-scrollbar-track,
+.ant-table-content::-webkit-scrollbar-track,
+.ant-table-container::-webkit-scrollbar-track,
+.ant-table-scroll-horizontal::-webkit-scrollbar-track {
+  background: #f8fafc !important;
+  border-radius: 9999px !important;
+}
+
+.ant-table-body::-webkit-scrollbar-thumb,
+.ant-table-content::-webkit-scrollbar-thumb,
+.ant-table-container::-webkit-scrollbar-thumb,
+.ant-table-scroll-horizontal::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1 !important;
+  border-radius: 9999px !important;
+  border: 1px solid transparent !important;
+  background-clip: content-box !important;
+}
+
+.ant-table-body::-webkit-scrollbar-thumb:hover,
+.ant-table-content::-webkit-scrollbar-thumb:hover,
+.ant-table-container::-webkit-scrollbar-thumb:hover,
+.ant-table-scroll-horizontal::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8 !important;
+}
+
+.ant-table-body::-webkit-scrollbar-button,
+.ant-table-content::-webkit-scrollbar-button,
+.ant-table-container::-webkit-scrollbar-button,
+.ant-table-scroll-horizontal::-webkit-scrollbar-button {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
