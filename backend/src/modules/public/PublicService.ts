@@ -120,7 +120,7 @@ export class PublicService {
     );
 
     const lessonsRes = await executeQuery(
-      `SELECT id, section_id, title, content_type, video_url, video_duration_seconds,
+      `SELECT id, section_id, title, content_type, video_duration_seconds,
               video_duration_seconds as duration_seconds,
               is_free_preview, is_free_preview as is_previewable, order_index
        FROM ${this.schema}.lessons
@@ -130,13 +130,21 @@ export class PublicService {
     );
 
     const sections = sectionsRes.rows.map((sec) => ({
-      ...sec,
+      id: sec.id,
+      title: sec.title,
+      order_index: sec.order_index,
       lessons: lessonsRes.rows
         .filter((l) => l.section_id === sec.id)
         .map((l) => ({
-          ...l,
-          // Only expose video_url for free preview lessons; strip for all others
-          video_url: l.is_free_preview ? l.video_url : null,
+          id: l.id,
+          section_id: l.section_id,
+          title: l.title,
+          content_type: l.content_type,
+          duration_seconds: l.duration_seconds,
+          video_duration_seconds: l.video_duration_seconds,
+          is_free_preview: Boolean(l.is_free_preview),
+          is_previewable: Boolean(l.is_free_preview),
+          order_index: l.order_index,
         })),
     }));
 
