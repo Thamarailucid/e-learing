@@ -766,8 +766,9 @@ export async function InitializeDatabase(): Promise<void> {
     [adminEmail]
   );
 
+  const passwordHash = await PasswordUtils.hashPassword(EnvironmentConfig.superAdmin.password);
+
   if (existingAdmin.rowCount === 0) {
-    const passwordHash = await PasswordUtils.hashPassword(EnvironmentConfig.superAdmin.password);
     await executeQuery(
       `INSERT INTO ${schema}.users (email, password_hash, first_name, last_name, is_super_admin, is_active, email_verified)
        VALUES ($1, $2, 'Super', 'Administrator', TRUE, TRUE, TRUE)`,
@@ -775,7 +776,13 @@ export async function InitializeDatabase(): Promise<void> {
     );
     console.log(`[DB Init] Super Admin user created with email: ${adminEmail}`);
   } else {
-    console.log(`[DB Init] Super Admin user already exists: ${adminEmail}`);
+    await executeQuery(
+      `UPDATE ${schema}.users 
+       SET password_hash = $1, is_super_admin = TRUE, is_active = TRUE, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2`,
+      [passwordHash, existingAdmin.rows[0].id]
+    );
+    console.log(`[DB Init] Super Admin password and status synced: ${adminEmail}`);
   }
 
   // 9. Seed Default Showcase Academy (Apex Coding Academy)
