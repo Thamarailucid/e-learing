@@ -18,6 +18,8 @@ const router = (0, express_1.Router)();
 router.use(AuthenticateRequest_1.AuthenticateRequest, ResolveOrganizationContext_1.ResolveOrganizationContext);
 // Video streaming authorization
 router.get('/GenerateVideoPlaybackUrl/:lessonId', (req, res, next) => VideoController_1.videoController.GenerateVideoPlaybackUrl(req, res, next));
+// Transcoding Status
+router.get('/GetTranscodingStatus/:lessonId', (req, res, next) => VideoController_1.videoController.GetTranscodingStatus(req, res, next));
 // Video Upload (Staff only)
 router.post('/UploadCourseVideo/:lessonId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'), upload.single('video'), (req, res, next) => VideoController_1.videoController.UploadCourseVideo(req, res, next));
 // Interactive Video Questions

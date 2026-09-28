@@ -7,9 +7,18 @@ exports.EnvironmentConfig = void 0;
 exports.ValidateEnvironmentConfiguration = ValidateEnvironmentConfiguration;
 const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
-const nodeEnv = process.env.NODE_ENV || 'development';
-const envFile = nodeEnv === 'production' ? '.env.production' : '.env.development';
-dotenv_1.default.config({ path: path_1.default.resolve(process.cwd(), envFile) });
+const fs_1 = __importDefault(require("fs"));
+// 1. Load standard .env if present
+const standardEnv = path_1.default.resolve(process.cwd(), '.env');
+if (fs_1.default.existsSync(standardEnv)) {
+    dotenv_1.default.config({ path: standardEnv });
+}
+// 2. Load environment-specific file (.env.production or .env.development)
+const nodeEnv = process.env.NODE_ENV || process.env.APP_ENVIRONMENT || 'development';
+const envFile = path_1.default.resolve(process.cwd(), nodeEnv === 'production' ? '.env.production' : '.env.development');
+if (fs_1.default.existsSync(envFile)) {
+    dotenv_1.default.config({ path: envFile, override: true });
+}
 exports.EnvironmentConfig = {
     application: {
         name: process.env.APP_NAME || 'Novacodex',
@@ -62,6 +71,10 @@ exports.EnvironmentConfig = {
         host: process.env.REDIS_HOST || 'localhost',
         port: parseInt(process.env.REDIS_PORT || '6379', 10),
         password: process.env.REDIS_PASSWORD || undefined,
+    },
+    transcoding: {
+        tempDir: process.env.TRANSCODING_TEMP_DIR || '/tmp/novacodex-transcode',
+        enabled: process.env.TRANSCODING_ENABLED !== 'false',
     },
 };
 function ValidateEnvironmentConfiguration() {

@@ -539,6 +539,11 @@ async function InitializeDatabase() {
     ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS document_url TEXT;
     ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT 0;
     ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS is_free_preview BOOLEAN DEFAULT FALSE;
+    ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS hls_master_url TEXT;
+    ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS hls_status VARCHAR(30) DEFAULT 'NONE';
+    ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS hls_error_message TEXT;
+    ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS hls_variants JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS source_video_key TEXT;
 
     -- Video Interactive Questions columns
     ALTER TABLE ${schema}.video_interactive_questions ADD COLUMN IF NOT EXISTS explanation TEXT;
@@ -721,14 +726,17 @@ async function InitializeDatabase() {
     // 8. Seed / Update Super Admin
     const adminEmail = environment_1.EnvironmentConfig.superAdmin.email.toLowerCase();
     const existingAdmin = await (0, connection_1.executeQuery)(`SELECT id FROM ${schema}.users WHERE email = $1`, [adminEmail]);
+    const passwordHash = await PasswordUtils_1.PasswordUtils.hashPassword(environment_1.EnvironmentConfig.superAdmin.password);
     if (existingAdmin.rowCount === 0) {
-        const passwordHash = await PasswordUtils_1.PasswordUtils.hashPassword(environment_1.EnvironmentConfig.superAdmin.password);
         await (0, connection_1.executeQuery)(`INSERT INTO ${schema}.users (email, password_hash, first_name, last_name, is_super_admin, is_active, email_verified)
        VALUES ($1, $2, 'Super', 'Administrator', TRUE, TRUE, TRUE)`, [adminEmail, passwordHash]);
         console.log(`[DB Init] Super Admin user created with email: ${adminEmail}`);
     }
     else {
-        console.log(`[DB Init] Super Admin user already exists: ${adminEmail}`);
+        await (0, connection_1.executeQuery)(`UPDATE ${schema}.users 
+       SET password_hash = $1, is_super_admin = TRUE, is_active = TRUE, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2`, [passwordHash, existingAdmin.rows[0].id]);
+        console.log(`[DB Init] Super Admin password and status synced: ${adminEmail}`);
     }
     // 9. Seed Default Showcase Academy (Apex Coding Academy)
     let orgId;

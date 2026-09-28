@@ -543,6 +543,11 @@ export async function InitializeDatabase(): Promise<void> {
     ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS document_url TEXT;
     ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT 0;
     ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS is_free_preview BOOLEAN DEFAULT FALSE;
+    ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS hls_master_url TEXT;
+    ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS hls_status VARCHAR(30) DEFAULT 'NONE';
+    ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS hls_error_message TEXT;
+    ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS hls_variants JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS source_video_key TEXT;
 
     -- Video Interactive Questions columns
     ALTER TABLE ${schema}.video_interactive_questions ADD COLUMN IF NOT EXISTS explanation TEXT;

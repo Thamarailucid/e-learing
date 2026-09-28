@@ -19,6 +19,12 @@ router.get('/GenerateVideoPlaybackUrl/:lessonId', (req, res, next) =>
   videoController.GenerateVideoPlaybackUrl(req, res, next)
 );
 
+// Transcoding Status
+router.get('/GetTranscodingStatus/:lessonId', (req, res, next) =>
+  videoController.GetTranscodingStatus(req, res, next)
+);
+
+
 // Video Upload (Staff only)
 router.post(
   '/UploadCourseVideo/:lessonId',

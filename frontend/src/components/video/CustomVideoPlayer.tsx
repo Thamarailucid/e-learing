@@ -14,9 +14,11 @@ import {
   HelpCircle,
   ShieldAlert,
   Lock,
+  Settings,
 } from 'lucide-react';
 import { Slider, Popover, message } from 'antd';
 import { ApiClient } from '../../services/api/ApiClient';
+import Hls from 'hls.js';
 
 export interface InteractiveQuestionCue {
   id: string;
@@ -132,6 +134,13 @@ export const CustomVideoPlayer = forwardRef<CustomVideoPlayerRef, CustomVideoPla
   const [hoverTime, setHoverTime] = useState<number | null>(null);
   const [speedMenuOpen, setSpeedMenuOpen] = useState(false);
 
+  // HLS Adaptive Bitrate state
+  const hlsRef = useRef<Hls | null>(null);
+  const [hlsLevels, setHlsLevels] = useState<{height: number; width: number; bitrate: number}[]>([]);
+  const [currentQuality, setCurrentQuality] = useState<number>(-1); // -1 = Auto
+  const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
+  const [autoQualityLabel, setAutoQualityLabel] = useState<string>('');
+
   // Anti-Piracy Blackout States (Protects proprietary courses against OBS / Snipping Tool / Alt+Tab capture)
   const [blurBlackout, setBlurBlackout] = useState(false);
   const [screenshotFlash, setScreenshotFlash] = useState(false);
@@ -230,12 +239,91 @@ export const CustomVideoPlayer = forwardRef<CustomVideoPlayerRef, CustomVideoPla
     };
   }, [isPrivate, reportViolation]);
 
-  // Reset seeked flag when video source changes and force reload
+  // HLS.js initialization or fallback to native playback
   useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !src) return;
+
     hasSeekedInitialTime.current = false;
-    if (videoRef.current) {
-      videoRef.current.load();
+
+    // Cleanup previous HLS instance
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
     }
+    setHlsLevels([]);
+    setCurrentQuality(-1);
+    setAutoQualityLabel('');
+
+    const isHlsSource = src.endsWith('.m3u8') || src.includes('.m3u8');
+
+    if (isHlsSource && Hls.isSupported()) {
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        startLevel: -1,
+        capLevelToPlayerSize: true,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+      });
+
+      hls.loadSource(src);
+      hls.attachMedia(video);
+
+      hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
+        const levels = data.levels.map((l: any) => ({
+          height: l.height,
+          width: l.width,
+          bitrate: l.bitrate,
+        }));
+        // Sort by height ascending (480, 720, 1080)
+        levels.sort((a: any, b: any) => a.height - b.height);
+        setHlsLevels(levels);
+      });
+
+      hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
+        const level = hls.levels[data.level];
+        if (level && currentQuality === -1) {
+          setAutoQualityLabel(`${level.height}p`);
+        }
+      });
+
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              console.error('[HLS] Fatal network error, attempting recovery...');
+              hls.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              console.error('[HLS] Fatal media error, attempting recovery...');
+              hls.recoverMediaError();
+              break;
+            default:
+              console.error('[HLS] Fatal error, destroying instance');
+              hls.destroy();
+              break;
+          }
+        }
+      });
+
+      hlsRef.current = hls;
+    } else if (isHlsSource && video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Native HLS support (Safari/iOS)
+      video.src = src;
+      video.load();
+    } else {
+      // Standard MP4 playback
+      video.src = src;
+      video.load();
+    }
+
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
   }, [src]);
 
   // Resume from initialTime once when ready
@@ -385,6 +473,24 @@ export const CustomVideoPlayer = forwardRef<CustomVideoPlayerRef, CustomVideoPla
     setSpeedMenuOpen(false);
   };
 
+  // HLS Quality Change Handler
+  const handleQualityChange = (levelIndex: number) => {
+    if (hlsRef.current) {
+      if (levelIndex === -1) {
+        hlsRef.current.currentLevel = -1; // Auto
+        hlsRef.current.nextLevel = -1;
+      } else {
+        // Map sorted index to actual HLS level index
+        const sortedLevels = [...(hlsRef.current.levels || [])].sort((a, b) => a.height - b.height);
+        const targetHeight = sortedLevels[levelIndex]?.height;
+        const actualIndex = hlsRef.current.levels.findIndex(l => l.height === targetHeight);
+        hlsRef.current.currentLevel = actualIndex >= 0 ? actualIndex : levelIndex;
+      }
+      setCurrentQuality(levelIndex);
+    }
+    setQualityMenuOpen(false);
+  };
+
   // Fullscreen
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
@@ -526,7 +632,6 @@ export const CustomVideoPlayer = forwardRef<CustomVideoPlayerRef, CustomVideoPla
       {/* Video Element without default browser controls and with anti-download attributes */}
       <video
         ref={videoRef}
-        src={src}
         poster={poster}
         controls={false}
         controlsList="nodownload noplaybackrate nopictureinpicture"
@@ -812,6 +917,56 @@ export const CustomVideoPlayer = forwardRef<CustomVideoPlayerRef, CustomVideoPla
                 <span>{playbackSpeed}x</span>
               </button>
             </Popover>
+
+            {/* HLS Quality Selector */}
+            {hlsLevels.length > 0 && (
+              <Popover
+                open={qualityMenuOpen}
+                onOpenChange={setQualityMenuOpen}
+                trigger="click"
+                placement="top"
+                content={
+                  <div className="p-1 w-36 space-y-0.5">
+                    <div className="text-[10px] uppercase font-bold text-gray-400 px-2 py-1">
+                      Video Quality
+                    </div>
+                    <button
+                      onClick={() => handleQualityChange(-1)}
+                      className={`w-full text-left px-2.5 py-1.5 text-xs rounded flex items-center justify-between transition-colors ${
+                        currentQuality === -1
+                          ? 'bg-purple-50 text-purple-700 font-bold'
+                          : 'hover:bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      <span>Auto{autoQualityLabel ? ` (${autoQualityLabel})` : ''}</span>
+                      {currentQuality === -1 && <span className="text-[10px] text-purple-600 font-bold">✓</span>}
+                    </button>
+                    {hlsLevels.map((level, index) => (
+                      <button
+                        key={index}
+                        onClick={() => handleQualityChange(index)}
+                        className={`w-full text-left px-2.5 py-1.5 text-xs rounded flex items-center justify-between transition-colors ${
+                          currentQuality === index
+                            ? 'bg-purple-50 text-purple-700 font-bold'
+                            : 'hover:bg-gray-100 text-gray-700'
+                        }`}
+                      >
+                        <span>{level.height}p</span>
+                        {currentQuality === index && <span className="text-[10px] text-purple-600 font-bold">✓</span>}
+                      </button>
+                    ))}
+                  </div>
+                }
+              >
+                <button
+                  className="p-1 hover:text-purple-400 transition-colors flex items-center gap-1 text-[11px] font-mono px-1.5 py-0.5 rounded border border-white/20"
+                  title="Video Quality"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>{currentQuality === -1 ? (autoQualityLabel ? `Auto` : 'Auto') : `${hlsLevels[currentQuality]?.height}p`}</span>
+                </button>
+              </Popover>
+            )}
 
             {/* Fullscreen Toggle */}
             <button

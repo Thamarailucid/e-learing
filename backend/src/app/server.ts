@@ -2,6 +2,7 @@ import { createApp } from './app';
 import { EnvironmentConfig, ValidateEnvironmentConfiguration } from '../config/environment';
 import { InitializeDatabase } from '../database/initializeDatabase';
 import { dbPool } from '../database/connection';
+import { transcodingQueue } from '../services/transcoding/TranscodingQueue';
 
 async function startServer(): Promise<void> {
   try {
@@ -13,6 +14,9 @@ async function startServer(): Promise<void> {
 
     // 2. Initialize Database Schema, Tables, Indexes, and Super Admin
     await InitializeDatabase();
+    
+    // Recover interrupted HLS transcoding jobs
+    transcodingQueue.recoverInterruptedJobs().catch(console.error);
 
     // 3. Create Express App
     const app = createApp();

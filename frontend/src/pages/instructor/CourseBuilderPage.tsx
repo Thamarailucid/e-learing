@@ -342,9 +342,29 @@ export const CourseBuilderPage: React.FC = () => {
                         <div>
                           <div className="text-xs font-semibold text-gray-900 flex items-center gap-2">
                             <span>{lesson.title}</span>
-                            {lesson.video_url && (
+                            {lesson.video_url && !lesson.hls_status && (
                               <Tag color="success" className="!text-[10px] !px-1.5 !py-0 !leading-4 rounded">
                                 Ready
+                              </Tag>
+                            )}
+                            {lesson.hls_status === 'COMPLETED' && (
+                              <Tag color="success" className="!text-[10px] !px-1.5 !py-0 !leading-4 rounded flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> HLS Ready
+                              </Tag>
+                            )}
+                            {lesson.hls_status === 'PROCESSING' && (
+                              <Tag color="processing" className="!text-[10px] !px-1.5 !py-0 !leading-4 rounded flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span> Transcoding...
+                              </Tag>
+                            )}
+                            {lesson.hls_status === 'QUEUED' && (
+                              <Tag color="warning" className="!text-[10px] !px-1.5 !py-0 !leading-4 rounded flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-yellow-500"></span> Queued
+                              </Tag>
+                            )}
+                            {lesson.hls_status === 'FAILED' && (
+                              <Tag color="error" className="!text-[10px] !px-1.5 !py-0 !leading-4 rounded flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span> Failed
                               </Tag>
                             )}
                           </div>

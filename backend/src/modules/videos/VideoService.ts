@@ -3,6 +3,7 @@ import { EnvironmentConfig } from '../../config/environment';
 import { FileStorageFactory } from '../../services/storage/FileStorageFactory';
 import { ApiError } from '../../utils/ApiError';
 import { AssetNamingUtils } from '../../utils/AssetNamingUtils';
+import { transcodingQueue } from '../../services/transcoding/TranscodingQueue';
 
 export class VideoService {
   private schema = EnvironmentConfig.database.schema;
@@ -39,10 +40,15 @@ export class VideoService {
     // Update lesson video_url and video_file_size_bytes
     await executeQuery(
       `UPDATE ${this.schema}.lessons
-       SET video_url = $1, video_file_size_bytes = $2, content_type = 'VIDEO', updated_at = CURRENT_TIMESTAMP
+       SET video_url = $1, video_file_size_bytes = $2, content_type = 'VIDEO', updated_at = CURRENT_TIMESTAMP,
+           source_video_key = $4, hls_status = 'QUEUED', hls_error_message = NULL
        WHERE id = $3`,
-      [uploadResult.url, uploadResult.fileSize, lessonId]
+      [uploadResult.url, uploadResult.fileSize, lessonId, uploadResult.storageKey]
     );
+
+    if (uploadResult.storageKey && EnvironmentConfig.storage.provider === 's3') {
+      transcodingQueue.enqueue({ lessonId, organizationId, sourceKey: uploadResult.storageKey }).catch(console.error);
+    }
 
     return {
       lessonId,
@@ -127,17 +133,22 @@ export class VideoService {
     }
 
     const lessonRes = await executeQuery(
-      `SELECT video_url, title, video_duration_seconds FROM ${this.schema}.lessons WHERE id = $1 AND organization_id = $2`,
+      `SELECT video_url, title, video_duration_seconds, hls_master_url, hls_status, hls_variants FROM ${this.schema}.lessons WHERE id = $1 AND organization_id = $2`,
       [lessonId, organizationId]
     );
 
     if (lessonRes.rowCount === 0) throw ApiError.notFound('Lesson video not found.');
     const lesson = lessonRes.rows[0];
 
+    const isHls = !!lesson.hls_master_url;
+
     return {
       lessonId,
       title: lesson.title,
-      videoUrl: lesson.video_url,
+      videoUrl: lesson.hls_master_url || lesson.video_url,
+      isHls,
+      hlsStatus: lesson.hls_status,
+      hlsVariants: lesson.hls_variants || [],
       durationSeconds: lesson.video_duration_seconds,
     };
   }
@@ -201,6 +212,26 @@ export class VideoService {
       questionId,
       isCorrect,
       explanation: q.explanation,
+    };
+  }
+
+  async GetTranscodingStatus(organizationId: string, lessonId: string) {
+    const res = await executeQuery(
+      `SELECT id as lesson_id, hls_status, hls_master_url, hls_variants, hls_error_message 
+       FROM ${this.schema}.lessons 
+       WHERE id = $1 AND organization_id = $2`,
+      [lessonId, organizationId]
+    );
+
+    if (res.rowCount === 0) throw ApiError.notFound('Lesson not found.');
+    const row = res.rows[0];
+
+    return {
+      lessonId: row.lesson_id,
+      hlsStatus: row.hls_status,
+      hlsMasterUrl: row.hls_master_url,
+      hlsVariants: row.hls_variants || [],
+      hlsErrorMessage: row.hls_error_message
     };
   }
 }

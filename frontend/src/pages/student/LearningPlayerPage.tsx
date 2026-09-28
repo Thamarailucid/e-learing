@@ -113,7 +113,10 @@ export const LearningPlayerPage: React.FC = () => {
     queryKey: ['lesson-playback-url', activeLesson?.id],
     queryFn: async () => {
       if (!activeLesson?.id || activeLesson?.content_type !== 'VIDEO') return null;
-      if (activeLesson.video_url) return { videoUrl: activeLesson.video_url };
+      if (activeLesson.hls_master_url || activeLesson.video_url) return { 
+        hlsMasterUrl: activeLesson.hls_master_url,
+        videoUrl: activeLesson.video_url 
+      };
       try {
         const res = await ApiClient.get(`/videos/GenerateVideoPlaybackUrl/${activeLesson.id}`);
         return res.data?.data;
@@ -473,7 +476,7 @@ export const LearningPlayerPage: React.FC = () => {
               ) : (
                 <CustomVideoPlayer
                   ref={playerRef}
-                  src={playbackData?.videoUrl || activeLesson.video_url || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'}
+                  src={playbackData?.hlsMasterUrl || playbackData?.videoUrl || activeLesson.hls_master_url || activeLesson.video_url || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'}
                   title={activeLesson.title}
                   initialTime={initialResumePosition}
                   isPrivate={Boolean(course?.is_private)}

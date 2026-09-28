@@ -4,6 +4,7 @@ const app_1 = require("./app");
 const environment_1 = require("../config/environment");
 const initializeDatabase_1 = require("../database/initializeDatabase");
 const connection_1 = require("../database/connection");
+const TranscodingQueue_1 = require("../services/transcoding/TranscodingQueue");
 async function startServer() {
     try {
         console.log(`[Novacodex Platform] Booting in ${environment_1.EnvironmentConfig.application.environment} mode...`);
@@ -12,6 +13,8 @@ async function startServer() {
         console.log('[Novacodex Platform] Environment configuration validated.');
         // 2. Initialize Database Schema, Tables, Indexes, and Super Admin
         await (0, initializeDatabase_1.InitializeDatabase)();
+        // Recover interrupted HLS transcoding jobs
+        TranscodingQueue_1.transcodingQueue.recoverInterruptedJobs().catch(console.error);
         // 3. Create Express App
         const app = (0, app_1.createApp)();
         const port = environment_1.EnvironmentConfig.application.port;

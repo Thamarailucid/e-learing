@@ -6,6 +6,7 @@ const environment_1 = require("../../config/environment");
 const FileStorageFactory_1 = require("../../services/storage/FileStorageFactory");
 const ApiError_1 = require("../../utils/ApiError");
 const AssetNamingUtils_1 = require("../../utils/AssetNamingUtils");
+const TranscodingQueue_1 = require("../../services/transcoding/TranscodingQueue");
 class VideoService {
     schema = environment_1.EnvironmentConfig.database.schema;
     storage = FileStorageFactory_1.FileStorageFactory.getInstance();
@@ -29,8 +30,12 @@ class VideoService {
         });
         // Update lesson video_url and video_file_size_bytes
         await (0, connection_1.executeQuery)(`UPDATE ${this.schema}.lessons
-       SET video_url = $1, video_file_size_bytes = $2, content_type = 'VIDEO', updated_at = CURRENT_TIMESTAMP
-       WHERE id = $3`, [uploadResult.url, uploadResult.fileSize, lessonId]);
+       SET video_url = $1, video_file_size_bytes = $2, content_type = 'VIDEO', updated_at = CURRENT_TIMESTAMP,
+           source_video_key = $4, hls_status = 'QUEUED', hls_error_message = NULL
+       WHERE id = $3`, [uploadResult.url, uploadResult.fileSize, lessonId, uploadResult.storageKey]);
+        if (uploadResult.storageKey && environment_1.EnvironmentConfig.storage.provider === 's3') {
+            TranscodingQueue_1.transcodingQueue.enqueue({ lessonId, organizationId, sourceKey: uploadResult.storageKey }).catch(console.error);
+        }
         return {
             lessonId,
             videoUrl: uploadResult.url,
@@ -82,14 +87,18 @@ class VideoService {
                 }
             }
         }
-        const lessonRes = await (0, connection_1.executeQuery)(`SELECT video_url, title, video_duration_seconds FROM ${this.schema}.lessons WHERE id = $1 AND organization_id = $2`, [lessonId, organizationId]);
+        const lessonRes = await (0, connection_1.executeQuery)(`SELECT video_url, title, video_duration_seconds, hls_master_url, hls_status, hls_variants FROM ${this.schema}.lessons WHERE id = $1 AND organization_id = $2`, [lessonId, organizationId]);
         if (lessonRes.rowCount === 0)
             throw ApiError_1.ApiError.notFound('Lesson video not found.');
         const lesson = lessonRes.rows[0];
+        const isHls = !!lesson.hls_master_url;
         return {
             lessonId,
             title: lesson.title,
-            videoUrl: lesson.video_url,
+            videoUrl: lesson.hls_master_url || lesson.video_url,
+            isHls,
+            hlsStatus: lesson.hls_status,
+            hlsVariants: lesson.hls_variants || [],
             durationSeconds: lesson.video_duration_seconds,
         };
     }
@@ -130,6 +139,21 @@ class VideoService {
             questionId,
             isCorrect,
             explanation: q.explanation,
+        };
+    }
+    async GetTranscodingStatus(organizationId, lessonId) {
+        const res = await (0, connection_1.executeQuery)(`SELECT id as lesson_id, hls_status, hls_master_url, hls_variants, hls_error_message 
+       FROM ${this.schema}.lessons 
+       WHERE id = $1 AND organization_id = $2`, [lessonId, organizationId]);
+        if (res.rowCount === 0)
+            throw ApiError_1.ApiError.notFound('Lesson not found.');
+        const row = res.rows[0];
+        return {
+            lessonId: row.lesson_id,
+            hlsStatus: row.hls_status,
+            hlsMasterUrl: row.hls_master_url,
+            hlsVariants: row.hls_variants || [],
+            hlsErrorMessage: row.hls_error_message
         };
     }
 }

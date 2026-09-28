@@ -78,6 +78,16 @@ export class VideoController {
       next(err);
     }
   }
+  async GetTranscodingStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const orgId = req.organizationId!;
+      const { lessonId } = req.params;
+      const result = await videoService.GetTranscodingStatus(orgId, lessonId);
+      res.json(ApiResponse.success('Transcoding status retrieved.', result));
+    } catch (err) {
+      next(err);
+    }
+  }
 }
 
 export const videoController = new VideoController();
