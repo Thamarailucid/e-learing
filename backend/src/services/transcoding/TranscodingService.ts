@@ -30,9 +30,9 @@ export class TranscodingService {
   private region: string;
 
   private readonly PROFILES: ResolutionProfile[] = [
-    { quality: '480p', height: 480, videoBitrate: '1000k', audioBitrate: '128k', maxrate: '1100k', bufsize: '1500k' },
-    { quality: '720p', height: 720, videoBitrate: '2500k', audioBitrate: '128k', maxrate: '2800k', bufsize: '3500k' },
-    { quality: '1080p', height: 1080, videoBitrate: '5000k', audioBitrate: '192k', maxrate: '5500k', bufsize: '7500k' },
+    { quality: '480p', height: 480, videoBitrate: '900k', audioBitrate: '96k', maxrate: '1000k', bufsize: '1200k' },
+    { quality: '720p', height: 720, videoBitrate: '2000k', audioBitrate: '128k', maxrate: '2200k', bufsize: '2500k' },
+    { quality: '1080p', height: 1080, videoBitrate: '3000k', audioBitrate: '128k', maxrate: '3300k', bufsize: '4000k' },
   ];
 
   constructor() {
@@ -98,16 +98,33 @@ export class TranscodingService {
         }];
       }
 
-      // 4. Run FFmpeg for each resolution
+      // 4. Run FFmpeg for each resolution with graceful fallback
+      const successfulProfiles: ResolutionProfile[] = [];
       for (const profile of applicableProfiles) {
         const profileDir = path.join(workDir, `v${profile.height}`);
         fs.mkdirSync(profileDir, { recursive: true });
         console.log(`[TranscodingService] Transcoding ${profile.quality}...`);
-        await this.transcodeResolution(sourcePath, profileDir, profile, hasAudio);
+        try {
+          await this.transcodeResolution(sourcePath, profileDir, profile, hasAudio);
+          successfulProfiles.push(profile);
+          console.log(`[TranscodingService] ✅ ${profile.quality} rendered successfully.`);
+        } catch (profileErr: any) {
+          console.warn(`[TranscodingService] ⚠️ Profile ${profile.quality} skipped due to system constraint:`, profileErr.message);
+          // Remove failed profile directory
+          try {
+            if (fs.existsSync(profileDir)) {
+              fs.rmSync(profileDir, { recursive: true, force: true });
+            }
+          } catch {}
+        }
       }
 
-      // 5. Generate master.m3u8
-      const masterContent = this.generateMasterPlaylist(applicableProfiles);
+      if (successfulProfiles.length === 0) {
+        throw new Error('All resolution profiles failed during FFmpeg encoding.');
+      }
+
+      // 5. Generate master.m3u8 referencing successful profiles
+      const masterContent = this.generateMasterPlaylist(successfulProfiles);
       fs.writeFileSync(path.join(workDir, 'master.m3u8'), masterContent, 'utf-8');
 
       // 6. Upload all HLS outputs to S3
@@ -117,7 +134,7 @@ export class TranscodingService {
 
       // 7. Build result
       const masterUrl = `https://${this.bucketName}.s3.${this.region}.amazonaws.com/${hlsPrefix}/master.m3u8`;
-      const hlsVariants = applicableProfiles.map(p => ({
+      const hlsVariants = successfulProfiles.map(p => ({
         quality: p.quality,
         height: p.height,
         bandwidth: this.parseBitrateToNumber(p.videoBitrate) + this.parseBitrateToNumber(p.audioBitrate),
@@ -133,7 +150,7 @@ export class TranscodingService {
         [masterUrl, JSON.stringify(hlsVariants), durationSeconds, job.lessonId]
       );
 
-      console.log(`[TranscodingService] ✅ Completed: ${job.lessonId} → ${applicableProfiles.map(p => p.quality).join(', ')}`);
+      console.log(`[TranscodingService] ✅ Completed: ${job.lessonId} → ${successfulProfiles.map(p => p.quality).join(', ')}`);
     } catch (error: any) {
       console.error(`[TranscodingService] ❌ Job failed for lesson ${job.lessonId}:`, error.message || error);
       await executeQuery(
@@ -195,6 +212,7 @@ export class TranscodingService {
       '-g', '48',
       '-keyint_min', '48',
       '-sc_threshold', '0',
+      '-threads', '1',
       '-f', 'hls',
       '-hls_time', '6',
       '-hls_playlist_type', 'vod',
