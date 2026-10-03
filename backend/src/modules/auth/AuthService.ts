@@ -316,14 +316,37 @@ export class AuthService {
 
     const businessPrefix = orgPrefix + 'STD';
 
-    const insertRes = await executeQuery(
-      `INSERT INTO ${this.schema}.users (business_id, email, password_hash, first_name, last_name, phone, is_active, email_verified)
-       VALUES (${this.schema}.generate_business_id($1), $2, $3, $4, $5, $6, TRUE, TRUE)
-       RETURNING id, business_id, email, first_name, last_name`,
-      [businessPrefix, emailNorm, passwordHash, data.firstName, data.lastName, data.phone || null]
-    );
-
-    const newUser = insertRes.rows[0];
+    let newUser: any;
+    try {
+      const insertRes = await executeQuery(
+        `INSERT INTO ${this.schema}.users (business_id, email, password_hash, first_name, last_name, phone, is_active, email_verified)
+         VALUES (${this.schema}.generate_business_id($1), $2, $3, $4, $5, $6, TRUE, TRUE)
+         RETURNING id, business_id, email, first_name, last_name`,
+        [businessPrefix, emailNorm, passwordHash, data.firstName, data.lastName, data.phone || null]
+      );
+      newUser = insertRes.rows[0];
+    } catch (insertErr: any) {
+      console.warn('[AuthService] Standard student insert failed, attempting fallback:', insertErr.message);
+      const fallbackBusinessId = `${businessPrefix}-${Date.now().toString(36).toUpperCase()}-${Math.floor(100000 + Math.random() * 900000)}`;
+      try {
+        const insertRes = await executeQuery(
+          `INSERT INTO ${this.schema}.users (business_id, email, password_hash, first_name, last_name, phone, is_active, email_verified)
+           VALUES ($1, $2, $3, $4, $5, $6, TRUE, TRUE)
+           RETURNING id, business_id, email, first_name, last_name`,
+          [fallbackBusinessId, emailNorm, passwordHash, data.firstName, data.lastName, data.phone || null]
+        );
+        newUser = insertRes.rows[0];
+      } catch (colErr: any) {
+        // Ultimate fallback if business_id column is not in DB yet
+        const insertRes = await executeQuery(
+          `INSERT INTO ${this.schema}.users (email, password_hash, first_name, last_name, phone, is_active, email_verified)
+           VALUES ($1, $2, $3, $4, $5, TRUE, TRUE)
+           RETURNING id, email, first_name, last_name`,
+          [emailNorm, passwordHash, data.firstName, data.lastName, data.phone || null]
+        );
+        newUser = insertRes.rows[0];
+      }
+    }
 
     if (targetOrgId) {
       await executeQuery(

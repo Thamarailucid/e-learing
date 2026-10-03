@@ -30,9 +30,9 @@ export class TranscodingService {
   private region: string;
 
   private readonly PROFILES: ResolutionProfile[] = [
-    { quality: '480p', height: 480, videoBitrate: '900k', audioBitrate: '96k', maxrate: '1000k', bufsize: '1200k' },
-    { quality: '720p', height: 720, videoBitrate: '2000k', audioBitrate: '128k', maxrate: '2200k', bufsize: '2500k' },
-    { quality: '1080p', height: 1080, videoBitrate: '3000k', audioBitrate: '128k', maxrate: '3300k', bufsize: '4000k' },
+    { quality: '480p', height: 480, videoBitrate: '800k', audioBitrate: '96k', maxrate: '900k', bufsize: '1000k' },
+    { quality: '720p', height: 720, videoBitrate: '1600k', audioBitrate: '128k', maxrate: '1800k', bufsize: '2000k' },
+    { quality: '1080p', height: 1080, videoBitrate: '2400k', audioBitrate: '128k', maxrate: '2600k', bufsize: '2800k' },
   ];
 
   constructor() {
@@ -206,6 +206,7 @@ export class TranscodingService {
       '-vf', `scale=-2:${profile.height}`,
       '-c:v', 'libx264',
       '-preset', 'veryfast', // veryfast uses significantly less CPU on t3.micro
+      '-x264-params', 'rc-lookahead=10:sync-lookahead=0', // Restrict x264 lookahead memory buffer to avoid OOM
       '-b:v', profile.videoBitrate,
       '-maxrate', profile.maxrate,
       '-bufsize', profile.bufsize,

@@ -42,10 +42,24 @@ export async function InitializeDatabase(): Promise<void> {
   // 2. Core Tables
   const schema = EnvironmentConfig.database.schema;
 
+  // Stored function for human-readable business IDs
+  await executeQuery(`
+    CREATE OR REPLACE FUNCTION ${schema}.generate_business_id(prefix TEXT)
+    RETURNS TEXT AS $$
+    DECLARE
+      v_random TEXT;
+    BEGIN
+      v_random := LPAD(FLOOR(RANDOM() * 1000000)::TEXT, 6, '0');
+      RETURN UPPER(COALESCE(prefix, 'GEN')) || '-' || TO_CHAR(CURRENT_DATE, 'YYYYMM') || '-' || v_random;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+
   await executeQuery(`
     -- Users table
     CREATE TABLE IF NOT EXISTS ${schema}.users (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      business_id VARCHAR(50),
       email VARCHAR(255) NOT NULL UNIQUE,
       password_hash VARCHAR(255) NOT NULL,
       first_name VARCHAR(100) NOT NULL,
@@ -511,6 +525,7 @@ export async function InitializeDatabase(): Promise<void> {
     ALTER TABLE ${schema}.organizations ADD COLUMN IF NOT EXISTS invite_code VARCHAR(50);
 
     -- Users columns
+    ALTER TABLE ${schema}.users ADD COLUMN IF NOT EXISTS business_id VARCHAR(50);
     ALTER TABLE ${schema}.users ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
     ALTER TABLE ${schema}.users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
     ALTER TABLE ${schema}.users ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN DEFAULT FALSE;
@@ -608,6 +623,8 @@ export async function InitializeDatabase(): Promise<void> {
   // 4. Create Performance Indexes
   await executeQuery(`
     CREATE INDEX IF NOT EXISTS idx_users_email ON ${schema}.users(email);
+    CREATE INDEX IF NOT EXISTS idx_users_business_id ON ${schema}.users(business_id);
+    CREATE INDEX IF NOT EXISTS idx_orgs_business_id ON ${schema}.organizations(business_id);
     CREATE INDEX IF NOT EXISTS idx_users_session ON ${schema}.users(current_session_id);
     CREATE INDEX IF NOT EXISTS idx_org_members_org ON ${schema}.organization_members(organization_id);
     CREATE INDEX IF NOT EXISTS idx_org_members_user ON ${schema}.organization_members(user_id);
