@@ -98,6 +98,39 @@ class CampaignController {
             next(err);
         }
     }
+    async UpdateCampaignLink(req, res, next) {
+        try {
+            const orgId = req.organizationId;
+            const { campaignId } = req.params;
+            const { campaignName, targetInstitution, maxRedemptions, expiresAt, isActive } = req.body;
+            if (!campaignId)
+                throw ApiError_1.ApiError.badRequest('campaignId is required.');
+            const updated = await this.service.UpdateCampaignLink(orgId, campaignId, {
+                campaignName,
+                targetInstitution,
+                maxRedemptions,
+                expiresAt,
+                isActive,
+            });
+            res.json(ApiResponse_1.ApiResponse.success('Outreach campaign link updated successfully.', updated));
+        }
+        catch (err) {
+            next(err);
+        }
+    }
+    async DeleteCampaignLink(req, res, next) {
+        try {
+            const orgId = req.organizationId;
+            const { campaignId } = req.params;
+            if (!campaignId)
+                throw ApiError_1.ApiError.badRequest('campaignId is required.');
+            const result = await this.service.DeleteCampaignLink(orgId, campaignId);
+            res.json(ApiResponse_1.ApiResponse.success(result.message, result));
+        }
+        catch (err) {
+            next(err);
+        }
+    }
 }
 exports.CampaignController = CampaignController;
 exports.campaignController = new CampaignController();

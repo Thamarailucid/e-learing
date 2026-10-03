@@ -49,4 +49,20 @@ router.put(
   (req, res, next) => campaignController.ToggleCampaignStatus(req, res, next)
 );
 
+router.put(
+  '/UpdateCampaignLink/:campaignId',
+  AuthenticateRequest,
+  ResolveOrganizationContext,
+  AuthorizePermission('can_manage_campaigns'),
+  (req, res, next) => campaignController.UpdateCampaignLink(req, res, next)
+);
+
+router.delete(
+  '/DeleteCampaignLink/:campaignId',
+  AuthenticateRequest,
+  ResolveOrganizationContext,
+  AuthorizePermission('can_manage_campaigns'),
+  (req, res, next) => campaignController.DeleteCampaignLink(req, res, next)
+);
+
 export const CampaignRoutes = router;

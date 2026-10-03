@@ -267,5 +267,54 @@ class CampaignService {
         }
         return res.rows[0];
     }
+    /**
+     * Update campaign link settings, notably Maximum Allowed Seats (Quota), Target Institution, Campaign Name, Expiry Date, or Active Status.
+     */
+    async UpdateCampaignLink(organizationId, campaignId, data) {
+        const existingRes = await (0, connection_1.executeQuery)(`SELECT * FROM ${this.schema}.course_campaign_links WHERE id = $1 AND organization_id = $2`, [campaignId, organizationId]);
+        if (existingRes.rowCount === 0) {
+            throw ApiError_1.ApiError.notFound('Campaign outreach link not found.');
+        }
+        const existing = existingRes.rows[0];
+        // Validate seat quota
+        if (data.maxRedemptions !== undefined && data.maxRedemptions !== null) {
+            const seats = Number(data.maxRedemptions);
+            if (isNaN(seats) || seats < 1) {
+                throw ApiError_1.ApiError.badRequest('Maximum student seats must be at least 1.');
+            }
+            if (seats < existing.current_redemptions) {
+                throw ApiError_1.ApiError.badRequest(`Maximum seats cannot be less than the ${existing.current_redemptions} student seats already claimed.`);
+            }
+        }
+        const newCampaignName = data.campaignName !== undefined ? data.campaignName.trim() : existing.campaign_name;
+        const newTargetInstitution = data.targetInstitution !== undefined ? data.targetInstitution.trim() : existing.target_institution;
+        const newMaxRedemptions = data.maxRedemptions !== undefined && data.maxRedemptions !== null ? Number(data.maxRedemptions) : existing.max_redemptions;
+        const newExpiresAt = data.expiresAt !== undefined
+            ? (data.expiresAt ? new Date(data.expiresAt).toISOString() : null)
+            : existing.expires_at;
+        const newIsActive = data.isActive !== undefined ? Boolean(data.isActive) : existing.is_active;
+        const res = await (0, connection_1.executeQuery)(`UPDATE ${this.schema}.course_campaign_links
+       SET campaign_name = $1,
+           target_institution = $2,
+           max_redemptions = $3,
+           expires_at = $4,
+           is_active = $5,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $6 AND organization_id = $7
+       RETURNING *`, [newCampaignName, newTargetInstitution, newMaxRedemptions, newExpiresAt, newIsActive, campaignId, organizationId]);
+        return res.rows[0];
+    }
+    /**
+     * Delete outreach campaign link and all its redemption records.
+     */
+    async DeleteCampaignLink(organizationId, campaignId) {
+        const res = await (0, connection_1.executeQuery)(`DELETE FROM ${this.schema}.course_campaign_links
+       WHERE id = $1 AND organization_id = $2
+       RETURNING id`, [campaignId, organizationId]);
+        if (res.rowCount === 0) {
+            throw ApiError_1.ApiError.notFound('Campaign outreach link not found.');
+        }
+        return { id: campaignId, message: 'Campaign link deleted successfully.' };
+    }
 }
 exports.CampaignService = CampaignService;

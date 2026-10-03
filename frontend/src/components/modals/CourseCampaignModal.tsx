@@ -17,8 +17,10 @@ import {
   QRCode,
   Drawer,
   Tooltip,
+  Popconfirm,
 } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import dayjs from 'dayjs';
 import {
   Share2,
   Plus,
@@ -33,6 +35,8 @@ import {
   ShieldCheck,
   Download,
   UserCheck,
+  Edit2,
+  Trash2,
 } from 'lucide-react';
 import { ApiClient } from '../../services/api/ApiClient';
 
@@ -58,7 +62,12 @@ export const CourseCampaignModal: React.FC<CourseCampaignModalProps> = ({
   const [studentsDrawerOpen, setStudentsDrawerOpen] = useState(false);
   const [selectedCampaignForStudents, setSelectedCampaignForStudents] = useState<any>(null);
 
+  // Selected campaign for Edit Modal
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [selectedCampaignForEdit, setSelectedCampaignForEdit] = useState<any>(null);
+
   const [form] = Form.useForm();
+  const [editForm] = Form.useForm();
 
   // 1. Fetch campaigns for this course
   const { data: campaigns = [], isLoading } = useQuery({
@@ -119,6 +128,55 @@ export const CourseCampaignModal: React.FC<CourseCampaignModalProps> = ({
       message.error(err.response?.data?.message || 'Failed to update status.');
     },
   });
+
+  // 5. Update Campaign Mutation (Edit Seats, College, Expiry, Status)
+  const updateMutation = useMutation({
+    mutationFn: async (values: any) => {
+      const payload = {
+        campaignName: values.campaignName,
+        targetInstitution: values.targetInstitution,
+        maxRedemptions: values.maxRedemptions,
+        expiresAt: values.expiresAt ? values.expiresAt.toISOString() : null,
+        isActive: values.isActive,
+      };
+      return ApiClient.put(`/campaigns/UpdateCampaignLink/${selectedCampaignForEdit.id}`, payload);
+    },
+    onSuccess: () => {
+      message.success('Campaign seats and settings updated successfully!');
+      queryClient.invalidateQueries({ queryKey: ['course-campaigns', course?.id] });
+      setEditModalOpen(false);
+      setSelectedCampaignForEdit(null);
+    },
+    onError: (err: any) => {
+      message.error(err.response?.data?.message || 'Failed to update campaign link.');
+    },
+  });
+
+  // 6. Delete Campaign Mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (campaignId: string) => {
+      return ApiClient.delete(`/campaigns/DeleteCampaignLink/${campaignId}`);
+    },
+    onSuccess: () => {
+      message.success('Campaign link deleted successfully.');
+      queryClient.invalidateQueries({ queryKey: ['course-campaigns', course?.id] });
+    },
+    onError: (err: any) => {
+      message.error(err.response?.data?.message || 'Failed to delete campaign link.');
+    },
+  });
+
+  const handleOpenEdit = (record: any) => {
+    setSelectedCampaignForEdit(record);
+    editForm.setFieldsValue({
+      targetInstitution: record.target_institution,
+      campaignName: record.campaign_name,
+      maxRedemptions: record.max_redemptions,
+      expiresAt: record.expires_at ? dayjs(record.expires_at) : null,
+      isActive: record.is_active,
+    });
+    setEditModalOpen(true);
+  };
 
   const getShareUrl = (code: string) => {
     return `${window.location.origin}/course/join?token=${code}`;
@@ -183,21 +241,42 @@ export const CourseCampaignModal: React.FC<CourseCampaignModalProps> = ({
     {
       title: 'Seats Claimed',
       key: 'quota',
-      width: 170,
+      width: 190,
       render: (_: any, record: any) => {
+        const isFull = record.current_redemptions >= record.max_redemptions;
         const pct = Math.min(100, Math.round((record.current_redemptions / record.max_redemptions) * 100));
         return (
           <div className="space-y-1">
-            <div className="flex justify-between text-xs font-semibold">
+            <div className="flex justify-between items-center text-xs font-semibold">
               <span className="text-gray-700">{record.current_redemptions} claimed</span>
-              <span className="text-gray-400">of {record.max_redemptions}</span>
+              <button
+                type="button"
+                onClick={() => handleOpenEdit(record)}
+                className="text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-0.5 cursor-pointer font-semibold bg-indigo-50/70 hover:bg-indigo-100 px-1.5 py-0.5 rounded transition-colors"
+                title="Click to edit seats quota"
+              >
+                <span>of {record.max_redemptions}</span>
+                <Edit2 className="w-2.5 h-2.5 ml-0.5 opacity-70" />
+              </button>
             </div>
             <Progress
               percent={pct}
               size="small"
-              status={pct >= 100 ? 'exception' : 'active'}
-              strokeColor={pct >= 100 ? '#ef4444' : '#6366f1'}
+              status={isFull ? 'exception' : 'active'}
+              strokeColor={isFull ? '#ef4444' : '#6366f1'}
             />
+            {isFull && (
+              <div className="flex items-center justify-between text-[11px] pt-0.5">
+                <span className="text-rose-600 font-medium">Quota Full</span>
+                <button
+                  type="button"
+                  onClick={() => handleOpenEdit(record)}
+                  className="text-indigo-600 hover:text-indigo-800 text-[11px] font-semibold hover:underline cursor-pointer"
+                >
+                  + Add Seats
+                </button>
+              </div>
+            )}
           </div>
         );
       },
@@ -238,7 +317,7 @@ export const CourseCampaignModal: React.FC<CourseCampaignModalProps> = ({
     {
       title: 'Actions',
       key: 'actions',
-      width: 170,
+      width: 210,
       render: (_: any, record: any) => (
         <div className="flex items-center gap-1.5">
           <Tooltip title="Copy Shareable Link">
@@ -269,6 +348,31 @@ export const CourseCampaignModal: React.FC<CourseCampaignModalProps> = ({
               <span className="text-xs">{record.current_redemptions}</span>
             </Button>
           </Tooltip>
+
+          <Tooltip title="Edit Seats & Settings">
+            <Button
+              size="small"
+              icon={<Edit2 className="w-3.5 h-3.5 text-amber-600" />}
+              onClick={() => handleOpenEdit(record)}
+            />
+          </Tooltip>
+
+          <Popconfirm
+            title="Delete Outreach Link"
+            description="Are you sure you want to remove this campaign link?"
+            okText="Yes, Delete"
+            cancelText="Cancel"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => deleteMutation.mutate(record.id)}
+          >
+            <Tooltip title="Delete Campaign Link">
+              <Button
+                size="small"
+                danger
+                icon={<Trash2 className="w-3.5 h-3.5 text-rose-500" />}
+              />
+            </Tooltip>
+          </Popconfirm>
         </div>
       ),
     },
@@ -521,6 +625,126 @@ export const CourseCampaignModal: React.FC<CourseCampaignModalProps> = ({
           ]}
         />
       </Drawer>
+
+      {/* Edit Campaign & Seats Modal */}
+      {selectedCampaignForEdit && (
+        <Modal
+          open={editModalOpen}
+          title={
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
+                <Edit2 className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-gray-900">
+                  Edit Campaign & Seat Allocation
+                </div>
+                <div className="text-xs text-gray-500 font-normal">
+                  Institution: <span className="font-semibold text-gray-700">{selectedCampaignForEdit.target_institution}</span> • Code: <span className="font-mono text-purple-600 font-semibold">{selectedCampaignForEdit.invite_code}</span>
+                </div>
+              </div>
+            </div>
+          }
+          onCancel={() => {
+            setEditModalOpen(false);
+            setSelectedCampaignForEdit(null);
+          }}
+          footer={null}
+          width={520}
+          destroyOnHidden
+        >
+          <Form
+            form={editForm}
+            layout="vertical"
+            className="pt-3"
+            onFinish={(values) => updateMutation.mutate(values)}
+          >
+            <Form.Item
+              name="targetInstitution"
+              label={<span className="text-xs font-semibold text-gray-700">Target Institution / College Name</span>}
+              rules={[{ required: true, message: 'Enter target institution or partner name' }]}
+            >
+              <Input
+                prefix={<Building2 className="w-4 h-4 text-gray-400 mr-1" />}
+                placeholder="e.g. St. Joseph College of Engineering"
+              />
+            </Form.Item>
+
+            <Form.Item
+              name="campaignName"
+              label={<span className="text-xs font-semibold text-gray-700">Campaign / Purpose Name</span>}
+              rules={[{ required: true, message: 'Enter campaign purpose' }]}
+            >
+              <Input placeholder="e.g. Free Tech Seminar Batch 2026" />
+            </Form.Item>
+
+            <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl mb-4">
+              <div className="text-xs font-semibold text-amber-900 mb-1 flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-amber-700" />
+                <span>Student Seats Allocation</span>
+              </div>
+              <div className="text-[11px] text-amber-800">
+                Currently <strong>{selectedCampaignForEdit.current_redemptions}</strong> student seats have already been claimed. You can expand the maximum limit so additional students can enroll.
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Form.Item
+                name="maxRedemptions"
+                label={<span className="text-xs font-semibold text-gray-700">Maximum Allowed Seats</span>}
+                rules={[
+                  { required: true, message: 'Enter maximum student seats' },
+                  {
+                    validator: (_, value) => {
+                      if (value && value < selectedCampaignForEdit.current_redemptions) {
+                        return Promise.reject(
+                          new Error(`Must be at least ${selectedCampaignForEdit.current_redemptions} (already claimed)`)
+                        );
+                      }
+                      return Promise.resolve();
+                    },
+                  },
+                ]}
+              >
+                <InputNumber
+                  min={selectedCampaignForEdit.current_redemptions || 1}
+                  max={100000}
+                  className="w-full"
+                  placeholder="100"
+                />
+              </Form.Item>
+
+              <Form.Item
+                name="expiresAt"
+                label={<span className="text-xs font-semibold text-gray-700">Link Expiration Date</span>}
+                extra="Leave empty for 'Never expires'"
+              >
+                <DatePicker showTime className="w-full" placeholder="No expiry (Active)" allowClear />
+              </Form.Item>
+            </div>
+
+            <Form.Item
+              name="isActive"
+              valuePropName="checked"
+              label={<span className="text-xs font-semibold text-gray-700">Campaign Status</span>}
+            >
+              <Switch checkedChildren="Active" unCheckedChildren="Inactive" />
+            </Form.Item>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
+              <Button onClick={() => {
+                setEditModalOpen(false);
+                setSelectedCampaignForEdit(null);
+              }}>
+                Cancel
+              </Button>
+              <Button type="primary" htmlType="submit" loading={updateMutation.isPending}>
+                Save Changes & Update Seats
+              </Button>
+            </div>
+          </Form>
+        </Modal>
+      )}
     </>
   );
 };
