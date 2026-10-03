@@ -526,6 +526,185 @@ export class CourseService {
 
     return { success: true, message: 'Course deleted successfully' };
   }
+
+  async DeleteCourseSection(organizationId: string, sectionId: string) {
+    const sectionRes = await executeQuery(
+      `SELECT course_id FROM ${this.schema}.course_sections WHERE id = $1 AND organization_id = $2`,
+      [sectionId, organizationId]
+    );
+    if (sectionRes.rowCount === 0) throw ApiError.notFound('Course section not found.');
+    const courseId = sectionRes.rows[0].course_id;
+
+    await executeQuery(
+      `DELETE FROM ${this.schema}.course_sections WHERE id = $1 AND organization_id = $2`,
+      [sectionId, organizationId]
+    );
+
+    // recalculate total lessons count for the course and update student_course_progress
+    const lessonsCountRes = await executeQuery(
+      `SELECT COUNT(*) as count FROM ${this.schema}.lessons WHERE course_id = $1`,
+      [courseId]
+    );
+    const totalLessons = parseInt(lessonsCountRes.rows[0].count, 10);
+
+    await executeQuery(
+      `UPDATE ${this.schema}.student_course_progress SET total_lessons_count = $1 WHERE course_id = $2`,
+      [totalLessons, courseId]
+    );
+
+    return { success: true, message: 'Module section deleted successfully.' };
+  }
+
+  async DeleteLesson(organizationId: string, lessonId: string) {
+    const lessonRes = await executeQuery(
+      `SELECT course_id FROM ${this.schema}.lessons WHERE id = $1 AND organization_id = $2`,
+      [lessonId, organizationId]
+    );
+    if (lessonRes.rowCount === 0) throw ApiError.notFound('Lesson not found.');
+    const courseId = lessonRes.rows[0].course_id;
+
+    await executeQuery(
+      `DELETE FROM ${this.schema}.lessons WHERE id = $1 AND organization_id = $2`,
+      [lessonId, organizationId]
+    );
+
+    const lessonsCountRes = await executeQuery(
+      `SELECT COUNT(*) as count FROM ${this.schema}.lessons WHERE course_id = $1`,
+      [courseId]
+    );
+    const totalLessons = parseInt(lessonsCountRes.rows[0].count, 10);
+
+    await executeQuery(
+      `UPDATE ${this.schema}.student_course_progress SET total_lessons_count = $1 WHERE course_id = $2`,
+      [totalLessons, courseId]
+    );
+
+    return { success: true, message: 'Lesson deleted successfully.' };
+  }
+
+  async UploadLessonAttachment(organizationId: string, lessonId: string, file: Express.Multer.File) {
+    const uploadResult = await this.storage.UploadFile({
+      organizationId,
+      category: 'documents',
+      fileName: file.originalname,
+      mimeType: file.mimetype,
+      buffer: file.buffer,
+    });
+
+    const lessonRes = await executeQuery(
+      `SELECT attachments FROM ${this.schema}.lessons WHERE id = $1 AND organization_id = $2`,
+      [lessonId, organizationId]
+    );
+    if (lessonRes.rowCount === 0) throw ApiError.notFound('Lesson not found.');
+
+    const existingAttachments = lessonRes.rows[0].attachments || [];
+    const newAttachment = {
+      url: uploadResult.url,
+      name: file.originalname,
+      size: uploadResult.fileSize,
+      mimeType: file.mimetype,
+      uploadedAt: new Date().toISOString()
+    };
+    const updatedAttachments = [...existingAttachments, newAttachment];
+
+    await executeQuery(
+      `UPDATE ${this.schema}.lessons 
+       SET attachments = $1::jsonb, 
+           document_url = COALESCE(document_url, $2)
+       WHERE id = $3 AND organization_id = $4`,
+      [JSON.stringify(updatedAttachments), uploadResult.url, lessonId, organizationId]
+    );
+
+    return { attachment: newAttachment, attachments: updatedAttachments };
+  }
+
+  async ScaffoldCourseraFlow(organizationId: string, courseId: string) {
+    const modules = [
+      {
+        title: 'Module 1: Course Orientation & Foundations',
+        lessons: [
+          { title: 'Welcome & Overview', type: 'VIDEO' },
+          { title: 'Syllabus & Learning Goals', type: 'ARTICLE' }
+        ]
+      },
+      {
+        title: 'Module 2: Core Concepts & Guided Practice',
+        lessons: [
+          { title: 'Introduction', type: 'VIDEO' },
+          { title: 'Practice reading note', type: 'ARTICLE' }
+        ]
+      },
+      {
+        title: 'Module 3: Reference Materials, Cheatsheets & Downloads',
+        lessons: [
+          { title: 'Course reference guides and downloads', type: 'DOCUMENT' }
+        ]
+      },
+      {
+        title: 'Module 4: Course Conclusion & Feedback',
+        lessons: [
+          { title: 'Course wrap-up', type: 'ARTICLE' },
+          { title: 'Feedback & Certificate unlock', type: 'ARTICLE' }
+        ]
+      }
+    ];
+
+    let secOrder = 0;
+    let lesOrder = 0;
+    for (const mod of modules) {
+      const secRes = await executeQuery(
+        `INSERT INTO ${this.schema}.course_sections (organization_id, course_id, title, order_index)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [organizationId, courseId, mod.title, secOrder++]
+      );
+      const secId = secRes.rows[0].id;
+
+      for (const les of mod.lessons) {
+        await executeQuery(
+          `INSERT INTO ${this.schema}.lessons (organization_id, course_id, section_id, title, content_type, order_index)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [organizationId, courseId, secId, les.title, les.type, lesOrder++]
+        );
+      }
+    }
+
+    const lessonsCountRes = await executeQuery(
+      `SELECT COUNT(*) as count FROM ${this.schema}.lessons WHERE course_id = $1`,
+      [courseId]
+    );
+    const totalLessons = parseInt(lessonsCountRes.rows[0].count, 10);
+
+    await executeQuery(
+      `UPDATE ${this.schema}.student_course_progress SET total_lessons_count = $1 WHERE course_id = $2`,
+      [totalLessons, courseId]
+    );
+
+    return this.GetCourseDetails(organizationId, courseId);
+  }
+
+  async SubmitCourseFeedback(organizationId: string, userId: string, courseId: string, rating: number, feedbackText?: string) {
+    const res = await executeQuery(
+      `INSERT INTO ${this.schema}.course_feedback (organization_id, user_id, course_id, rating, feedback_text)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (user_id, course_id) 
+       DO UPDATE SET rating = EXCLUDED.rating, feedback_text = EXCLUDED.feedback_text, updated_at = CURRENT_TIMESTAMP
+       RETURNING *`,
+      [organizationId, userId, courseId, rating, feedbackText || null]
+    );
+    return res.rows[0];
+  }
+
+  async GetCourseFeedback(organizationId: string, courseId: string) {
+    const res = await executeQuery(
+      `SELECT cf.*, u.first_name, u.last_name
+       FROM ${this.schema}.course_feedback cf
+       JOIN ${this.schema}.users u ON u.id = cf.user_id
+       WHERE cf.course_id = $1 AND cf.organization_id = $2
+       ORDER BY cf.created_at DESC`,
+      [courseId, organizationId]
+    );
+    return res.rows;
+  }
 }
 
 export const courseService = new CourseService();

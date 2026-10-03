@@ -72,4 +72,16 @@ router.post(
 // Security & Anti-Piracy Violation Logging
 router.post('/LogCourseViolation', (req, res, next) => courseController.LogCourseViolation(req, res, next));
 
+const uploadDoc = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+});
+
+router.delete('/DeleteCourseSection/:sectionId', AuthorizeRoles('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR', 'CONTENT_MANAGER'), (req, res, next) => courseController.DeleteCourseSection(req, res, next));
+router.delete('/DeleteLesson/:lessonId', AuthorizeRoles('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR', 'CONTENT_MANAGER'), (req, res, next) => courseController.DeleteLesson(req, res, next));
+router.post('/UploadLessonAttachment/:lessonId', AuthorizeRoles('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'), uploadDoc.single('file'), (req, res, next) => courseController.UploadLessonAttachment(req, res, next));
+router.post('/ScaffoldCourseraFlow/:courseId', AuthorizeRoles('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'), (req, res, next) => courseController.ScaffoldCourseraFlow(req, res, next));
+router.post('/SubmitCourseFeedback', (req, res, next) => courseController.SubmitCourseFeedback(req, res, next));
+router.get('/GetCourseFeedback/:courseId', (req, res, next) => courseController.GetCourseFeedback(req, res, next));
+
 export const CourseRoutes = router;

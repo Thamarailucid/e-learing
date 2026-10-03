@@ -173,10 +173,10 @@ export class StaffService {
       }
       const hash = await PasswordUtils.hashPassword(initialPassword);
       const orgLookup = await executeQuery(
-        `SELECT org_prefix FROM ${this.schema}.organizations WHERE id = $1`,
+        `SELECT COALESCE(org_prefix, 'ORG') as org_prefix FROM ${this.schema}.organizations WHERE id = $1`,
         [organizationId]
       );
-      const orgPrefix = orgLookup.rowCount! > 0 ? orgLookup.rows[0].org_prefix : 'SYS';
+      const orgPrefix = (orgLookup.rowCount! > 0 ? orgLookup.rows[0].org_prefix : 'ORG') || 'ORG';
       const businessPrefix = orgPrefix + 'STF';
 
       const newUserRes = await executeQuery(

@@ -60,6 +60,8 @@ async function InitializeDatabase() {
     -- Organizations table
     CREATE TABLE IF NOT EXISTS ${schema}.organizations (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      org_prefix VARCHAR(10) DEFAULT 'ORG',
+      business_id VARCHAR(50),
       name VARCHAR(255) NOT NULL,
       slug VARCHAR(100) NOT NULL UNIQUE,
       domain VARCHAR(255),
@@ -471,10 +473,25 @@ async function InitializeDatabase() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT uq_staff_invite_user UNIQUE (invite_id, user_id)
     );
+
+    -- Course Feedback
+    CREATE TABLE IF NOT EXISTS ${schema}.course_feedback (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      organization_id UUID NOT NULL REFERENCES ${schema}.organizations(id) ON DELETE CASCADE,
+      course_id UUID NOT NULL REFERENCES ${schema}.courses(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES ${schema}.users(id) ON DELETE CASCADE,
+      rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+      feedback_text TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT uq_user_course_feedback UNIQUE (user_id, course_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_course_feedback_course ON ${schema}.course_feedback(course_id);
   `);
     // 3. Idempotent Column Additions & Schema Synchronizations (Guarantees production DB compatibility)
     await (0, connection_1.executeQuery)(`
     -- Organizations columns
+    ALTER TABLE ${schema}.organizations ADD COLUMN IF NOT EXISTS org_prefix VARCHAR(10) DEFAULT 'ORG';
+    ALTER TABLE ${schema}.organizations ADD COLUMN IF NOT EXISTS business_id VARCHAR(50);
     ALTER TABLE ${schema}.organizations ADD COLUMN IF NOT EXISTS logo_url TEXT;
     ALTER TABLE ${schema}.organizations ADD COLUMN IF NOT EXISTS favicon_url TEXT;
     ALTER TABLE ${schema}.organizations ADD COLUMN IF NOT EXISTS plan_type VARCHAR(50) DEFAULT 'STARTER';
@@ -532,6 +549,8 @@ async function InitializeDatabase() {
     ALTER TABLE ${schema}.courses ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES ${schema}.users(id);
 
     -- Lessons columns
+    ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS document_url TEXT;
     ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS content_type VARCHAR(50) DEFAULT 'VIDEO';
     ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS video_url TEXT;
     ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS video_duration_seconds INTEGER DEFAULT 0;
@@ -576,6 +595,10 @@ async function InitializeDatabase() {
 
     -- Student Lesson Progress timestamps
     ALTER TABLE ${schema}.student_lesson_progress ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+    -- Quizzes columns
+    ALTER TABLE ${schema}.quizzes ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE ${schema}.quizzes ADD COLUMN IF NOT EXISTS document_url TEXT;
   `);
     // 4. Create Performance Indexes
     await (0, connection_1.executeQuery)(`

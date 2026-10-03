@@ -200,11 +200,12 @@ export class SuperAdminService {
         generatedPassword = defaultPwd;
       }
       const hash = await PasswordUtils.hashPassword(defaultPwd);
+      const orgPrefix = org.org_prefix || 'ORG';
       const newUser = await executeQuery(
         `INSERT INTO ${this.schema}.users (business_id, email, password_hash, first_name, last_name, is_active, email_verified, must_reset_password)
          VALUES (${this.schema}.generate_business_id($1), $2, $3, $4, $5, TRUE, TRUE, TRUE)
          RETURNING id`,
-        [org.org_prefix + 'STF', ownerEmailNorm, hash, data.ownerFirstName, data.ownerLastName]
+        [orgPrefix + 'STF', ownerEmailNorm, hash, data.ownerFirstName, data.ownerLastName]
       );
       ownerId = newUser.rows[0].id;
     } else {

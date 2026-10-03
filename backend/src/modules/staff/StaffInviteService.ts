@@ -273,10 +273,10 @@ export class StaffInviteService {
       userId = existingUser.rows[0].id;
     } else {
       const orgLookup = await executeQuery(
-        `SELECT org_prefix FROM ${this.schema}.organizations WHERE id = $1`,
+        `SELECT COALESCE(org_prefix, 'ORG') as org_prefix FROM ${this.schema}.organizations WHERE id = $1`,
         [invite.organization_id]
       );
-      const orgPrefix = orgLookup.rowCount! > 0 ? orgLookup.rows[0].org_prefix : 'SYS';
+      const orgPrefix = (orgLookup.rowCount! > 0 ? orgLookup.rows[0].org_prefix : 'ORG') || 'ORG';
       const businessPrefix = orgPrefix + 'STF';
 
       const newUserRes = await executeQuery(

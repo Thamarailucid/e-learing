@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Card, Button, Modal, Form, Input, Select, InputNumber, message, Tag, Upload, Tooltip, Radio } from 'antd';
-import { Plus, Video, FileText, HelpCircle, Check, ArrowLeft, UploadCloud, Clock, Image as ImageIcon, CheckCircle } from 'lucide-react';
+import { Card, Button, Modal, Form, Input, Select, InputNumber, message, Tag, Upload, Tooltip, Radio, Popconfirm } from 'antd';
+import { Plus, Video, FileText, HelpCircle, Check, ArrowLeft, UploadCloud, Clock, Image as ImageIcon, CheckCircle, Sparkles, Trash2, Paperclip, Download } from 'lucide-react';
 import { ApiClient } from '../../services/api/ApiClient';
 import { RbaPageHeader } from '../../components/common/RbaPageHeader';
 import { RbaStatusBadge } from '../../components/common/RbaStatusBadge';
@@ -199,6 +199,41 @@ export const CourseBuilderPage: React.FC = () => {
     },
   });
 
+  // 8. Delete Section Mutation
+  const deleteSectionMutation = useMutation({
+    mutationFn: async (sectionId: string) => {
+      return ApiClient.delete(`/courses/DeleteCourseSection/${sectionId}`);
+    },
+    onSuccess: () => {
+      message.success('Module section deleted.');
+      queryClient.invalidateQueries({ queryKey: ['course-details', courseId] });
+      setActiveSectionId(null);
+    },
+  });
+
+  // 9. Delete Lesson Mutation
+  const deleteLessonMutation = useMutation({
+    mutationFn: async (lessonId: string) => {
+      return ApiClient.delete(`/courses/DeleteLesson/${lessonId}`);
+    },
+    onSuccess: () => {
+      message.success('Lesson deleted.');
+      queryClient.invalidateQueries({ queryKey: ['course-details', courseId] });
+      setPreviewLesson(null);
+    },
+  });
+
+  // 10. Scaffold Coursera Flow Mutation
+  const scaffoldMutation = useMutation({
+    mutationFn: async () => {
+      return ApiClient.post(`/courses/ScaffoldCourseraFlow/${courseId}`);
+    },
+    onSuccess: () => {
+      message.success('Coursera pedagogical flow generated.');
+      queryClient.invalidateQueries({ queryKey: ['course-details', courseId] });
+    },
+  });
+
   const location = useLocation();
   let backPath = '/instructor/dashboard';
   if (location.pathname.startsWith('/organization')) {
@@ -292,14 +327,21 @@ export const CourseBuilderPage: React.FC = () => {
               <h3 className="text-base font-bold text-gray-900">Curriculum Structure</h3>
               <p className="text-xs text-gray-500">Organize your course into sections, upload videos, and place interactive checkpoints</p>
             </div>
-          <Button
-            type="primary"
-            icon={<Plus className="w-4 h-4" />}
-            onClick={() => setSectionModalOpen(true)}
-          >
-            Add Module Section
-          </Button>
-        </div>
+            <div className="flex gap-2">
+              <Popconfirm title="Generate Coursera-Style Course Flow?" description="This will generate a structured 4-module pedagogical framework: 1. Welcome & Orientation, 2. Core Concepts, 3. Reference Materials & Downloads, 4. Conclusion & Feedback." onConfirm={() => scaffoldMutation.mutate()}>
+                <Button icon={<Sparkles className="w-4 h-4 text-amber-500" />}>
+                  Scaffold Coursera Flow
+                </Button>
+              </Popconfirm>
+              <Button
+                type="primary"
+                icon={<Plus className="w-4 h-4" />}
+                onClick={() => setSectionModalOpen(true)}
+              >
+                Add Module Section
+              </Button>
+            </div>
+          </div>
 
         {course?.sections?.length === 0 ? (
           <Card className="!rounded-xl border border-dashed border-[#e5e5e5] text-center p-8">
@@ -311,17 +353,22 @@ export const CourseBuilderPage: React.FC = () => {
               key={section.id}
               title={<span className="font-semibold text-sm">{section.title}</span>}
               extra={
-                <Button
-                  size="small"
-                  type="link"
-                  icon={<Plus className="w-3.5 h-3.5" />}
-                  onClick={() => {
-                    setActiveSectionId(section.id);
-                    setLessonModalOpen(true);
-                  }}
-                >
-                  Add Lesson
-                </Button>
+                <div className="flex gap-2 items-center">
+                  <Button
+                    size="small"
+                    type="link"
+                    icon={<Plus className="w-3.5 h-3.5" />}
+                    onClick={() => {
+                      setActiveSectionId(section.id);
+                      setLessonModalOpen(true);
+                    }}
+                  >
+                    Add Lesson
+                  </Button>
+                  <Popconfirm title="Delete Module Section" description="Are you sure? This will permanently delete this module and all lessons within it." onConfirm={() => deleteSectionMutation.mutate(section.id)} okText="Delete" cancelText="Cancel" okButtonProps={{ danger: true }}>
+                    <Button size="small" type="text" danger icon={<Trash2 className="w-3.5 h-3.5" />}>Delete Module</Button>
+                  </Popconfirm>
+                </div>
               }
               className="!rounded-xl border border-[#e5e5e5]"
             >
@@ -371,12 +418,47 @@ export const CourseBuilderPage: React.FC = () => {
                           <div className="text-[11px] text-gray-500">
                             {lesson.content_type} • {lesson.video_duration_seconds ? `${Math.floor(lesson.video_duration_seconds / 60)} mins` : 'Article'}
                           </div>
+                          {lesson.attachments && lesson.attachments.length > 0 && (
+                            <div className="mt-1 flex flex-col gap-1">
+                              {lesson.attachments.map((att: any) => (
+                                <div key={att.id} className="text-[10px] flex items-center gap-1 text-gray-600 bg-gray-100 p-1 rounded w-max">
+                                  <Paperclip className="w-3 h-3" />
+                                  <a href={att.file_url} target="_blank" rel="noreferrer" className="hover:underline">{att.file_name}</a>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
 
                       <div className="flex items-center gap-2">
+                        {/* Attachments Section */}
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <Upload
+                            showUploadList={false}
+                            accept=".pdf,.docx,.zip,.txt,.js,.py,.html,.css"
+                            beforeUpload={async (file) => {
+                              const formData = new FormData();
+                              formData.append('attachment', file);
+                              try {
+                                await ApiClient.post(`/courses/UploadLessonAttachment/${lesson.id}`, formData, {
+                                  headers: { 'Content-Type': 'multipart/form-data' },
+                                });
+                                message.success('Attachment uploaded successfully!');
+                                queryClient.invalidateQueries({ queryKey: ['course-details', courseId] });
+                              } catch (err) {
+                                message.error('Failed to upload attachment.');
+                              }
+                              return false;
+                            }}
+                          >
+                            <Button size="small" icon={<Paperclip className="w-3 h-3 text-emerald-600" />} className="text-xs">
+                              Add Attachment
+                            </Button>
+                          </Upload>
+                        </div>
                         {lesson.content_type === 'VIDEO' && (
-                            <div onClick={(e) => e.stopPropagation()}>
+                            <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-2">
                               {/* Upload MP4 Video with Standardized Naming */}
                               <Upload
                                 showUploadList={false}
@@ -407,12 +489,17 @@ export const CourseBuilderPage: React.FC = () => {
                                   setActiveLessonId(lesson.id);
                                   setQuestionModalOpen(true);
                                 }}
-                                className="text-xs ml-2"
+                                className="text-xs"
                               >
                                 In-Video Question
                               </Button>
                             </div>
                         )}
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <Popconfirm title="Delete Lesson" description="Are you sure you want to delete this lesson?" onConfirm={() => deleteLessonMutation.mutate(lesson.id)} okText="Delete" cancelText="Cancel" okButtonProps={{ danger: true }}>
+                            <Button size="small" type="text" danger icon={<Trash2 className="w-3.5 h-3.5 text-rose-500" />} />
+                          </Popconfirm>
+                        </div>
                       </div>
                     </div>
                   ))}

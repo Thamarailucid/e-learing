@@ -292,25 +292,25 @@ export class AuthService {
     
     // Resolve target organization and prefix
     let targetOrgId = data.organizationId;
-    let orgPrefix = 'SYS';
+    let orgPrefix = 'ORG';
     
     if (!targetOrgId && (data.organizationSlug || data.organizationCode)) {
       const lookup = (data.organizationSlug || data.organizationCode)!.trim();
       const orgLookup = await executeQuery(
-        `SELECT id, org_prefix FROM ${this.schema}.organizations WHERE (slug ILIKE $1 OR invite_code ILIKE $1 OR id::text = $1) AND status = 'ACTIVE'`,
+        `SELECT id, COALESCE(org_prefix, 'ORG') as org_prefix FROM ${this.schema}.organizations WHERE (slug ILIKE $1 OR invite_code ILIKE $1 OR id::text = $1) AND status = 'ACTIVE'`,
         [lookup]
       );
       if (orgLookup.rowCount! > 0) {
         targetOrgId = orgLookup.rows[0].id;
-        orgPrefix = orgLookup.rows[0].org_prefix;
+        orgPrefix = orgLookup.rows[0].org_prefix || 'ORG';
       }
     } else if (targetOrgId) {
       const orgLookup = await executeQuery(
-        `SELECT org_prefix FROM ${this.schema}.organizations WHERE id = $1 AND status = 'ACTIVE'`,
+        `SELECT COALESCE(org_prefix, 'ORG') as org_prefix FROM ${this.schema}.organizations WHERE id = $1 AND status = 'ACTIVE'`,
         [targetOrgId]
       );
       if (orgLookup.rowCount! > 0) {
-        orgPrefix = orgLookup.rows[0].org_prefix;
+        orgPrefix = orgLookup.rows[0].org_prefix || 'ORG';
       }
     }
 

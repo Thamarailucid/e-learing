@@ -372,7 +372,7 @@ export const OrganizationSettingsPage: React.FC = () => {
             key: 'taxonomies',
             label: (
               <span className="flex items-center gap-2 font-medium">
-                <Layers className="w-4 h-4" /> Course Taxonomies
+                <Layers className="w-4 h-4" /> Course Classifications
               </span>
             ),
             children: (

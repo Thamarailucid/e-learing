@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Progress, Modal, Radio, message, Alert } from 'antd';
+import { Button, Card, Progress, Modal, Radio, message, Alert, Rate, Input } from 'antd';
 import {
   PlayCircle,
   CheckCircle2,
@@ -15,6 +15,11 @@ import {
   HardDrive,
   Clock,
   Calendar,
+  Star,
+  FileText,
+  Download,
+  BookOpen,
+  Send,
 } from 'lucide-react';
 import { ApiClient } from '../../services/api/ApiClient';
 import { SecureStorageService } from '../../services/storage/SecureStorageService';
@@ -69,6 +74,10 @@ export const LearningPlayerPage: React.FC = () => {
   const [selectedOption, setSelectedOption] = useState<string>('');
   const [questionFeedback, setQuestionFeedback] = useState<{ isCorrect: boolean; explanation?: string } | null>(null);
   const [answeredQuestionIds, setAnsweredQuestionIds] = useState<string[]>([]);
+
+  // Feedback State
+  const [feedbackRating, setFeedbackRating] = useState<number>(0);
+  const [feedbackText, setFeedbackText] = useState<string>('');
 
   // 1. Fetch Course with Sections & Lessons (Long cache, no polling, no refetch on window focus)
   const { data: course, isLoading } = useQuery({
@@ -236,6 +245,20 @@ export const LearningPlayerPage: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['student-course-progress', courseId] });
     },
+  });
+
+  // Feedback Mutation
+  const submitFeedbackMutation = useMutation({
+    mutationFn: async () => {
+      return ApiClient.post('/courses/SubmitCourseFeedback', {
+        courseId,
+        rating: feedbackRating,
+        feedbackText,
+      });
+    },
+    onSuccess: () => {
+      message.success('Thank you! Your feedback has been recorded.');
+    }
   });
 
   // Centralized, throttled video watch progress saver (Milestone, Pause, Heartbeat)
@@ -408,6 +431,12 @@ export const LearningPlayerPage: React.FC = () => {
 
   const isEligibleForCertificate = progressData?.courseProgress?.is_completed;
 
+  const isWelcomeStage = activeLesson?.content_type === 'WELCOME' || activeLesson?.title?.toLowerCase().includes('welcome') || activeLesson?.title?.toLowerCase().includes('orientation');
+  const isFeedbackStage = activeLesson?.content_type === 'FEEDBACK' || activeLesson?.title?.toLowerCase().includes('feedback') || activeLesson?.title?.toLowerCase().includes('wrap-up');
+  const isReferenceStage = activeLesson?.content_type === 'REFERENCE' || activeLesson?.title?.toLowerCase().includes('reference') || activeLesson?.title?.toLowerCase().includes('resource') || activeLesson?.title?.toLowerCase().includes('cheatsheet');
+  const isArticleStage = activeLesson?.content_type === 'ARTICLE' || (!activeLesson?.content_type && !isWelcomeStage && !isFeedbackStage && !isReferenceStage);
+  const hasAttachments = (activeLesson?.attachments && activeLesson.attachments.length > 0) || activeLesson?.document_url;
+
   if (isLoading) return <div className="p-8 text-center text-sm text-gray-500">Loading course player...</div>;
 
   return (
@@ -530,28 +559,83 @@ export const LearningPlayerPage: React.FC = () => {
                     message.success('Lesson finished! Watch progress recorded.');
                   }}
                 />
-              )) : (
-                <div className="bg-black rounded-2xl p-8 text-white text-center max-w-md mx-auto">
-                  <h3 className="text-lg font-bold mb-2">{activeLesson?.title}</h3>
-                  <p className="text-xs text-gray-300">
-                    {activeLesson?.article_content || 'Read through the material carefully to complete this lesson.'}
+              )) : isWelcomeStage ? (
+                <div className="bg-gradient-to-br from-indigo-50 to-white rounded-2xl p-8 border border-indigo-100 shadow-sm max-w-3xl mx-auto text-center">
+                  <h2 className="text-2xl font-extrabold text-indigo-950 mb-3">Welcome to {course?.title}</h2>
+                  <p className="text-sm text-gray-600 mb-6 max-w-xl mx-auto">
+                    We're thrilled to have you here! Get ready to expand your knowledge. Review the syllabus on the right and click below to begin your journey.
                   </p>
-                  <Button
-                    type="primary"
-                    className="mt-6"
-                    onClick={() => {
-                      completeLessonMutation.mutate({
-                        lessonId: activeLesson.id,
-                        lastPositionSeconds: 100,
-                        watchPercentage: 100,
-                      });
-                      message.success('Lesson marked as completed!');
-                    }}
-                  >
-                    Mark Lesson Complete
+                  <Button type="primary" size="large" onClick={() => {
+                      completeLessonMutation.mutate({ lessonId: activeLesson.id, lastPositionSeconds: 100, watchPercentage: 100 });
+                      message.success('Welcome completed!');
+                    }} className="!bg-indigo-600 font-semibold px-8 rounded-xl h-11">
+                    Start Learning
                   </Button>
-              </div>
-            )}
+                </div>
+              ) : isFeedbackStage ? (
+                <div className="bg-white rounded-2xl p-8 border border-gray-200 shadow-sm max-w-2xl mx-auto">
+                  <div className="text-center mb-6">
+                    <div className="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Star className="w-8 h-8" />
+                    </div>
+                    <h2 className="text-xl font-bold text-gray-900">Course Wrap-up & Feedback</h2>
+                    <p className="text-sm text-gray-500 mt-2">Congratulations on finishing the course! We'd love to hear your thoughts.</p>
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">How would you rate this course?</label>
+                      <Rate value={feedbackRating} onChange={setFeedbackRating} className="text-amber-400 text-2xl" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">What did you enjoy most? Any suggestions?</label>
+                      <Input.TextArea rows={4} value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)} placeholder="Share your experience..." className="rounded-xl" />
+                    </div>
+                    <Button type="primary" block size="large" loading={submitFeedbackMutation.isPending} onClick={() => submitFeedbackMutation.mutate()} className="!bg-black font-semibold h-11 rounded-xl">
+                      Submit Course Feedback
+                    </Button>
+                  </div>
+                  {isEligibleForCertificate && (
+                    <div className="mt-6 pt-6 border-t border-gray-100 text-center">
+                      <Button type="primary" icon={<Award className="w-4 h-4 text-amber-300" />} onClick={() => generateCertMutation.mutate()} className="!bg-gradient-to-r from-amber-500 to-amber-600 font-bold h-11 px-6 rounded-xl border-0 shadow-md">
+                        Claim Your Official Certificate
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ) : isReferenceStage ? (
+                <div className="bg-white rounded-2xl p-8 border border-gray-200 max-w-3xl mx-auto">
+                  <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100">
+                    <BookOpen className="w-6 h-6 text-emerald-600" />
+                    <h2 className="text-xl font-bold text-gray-900">Reference Materials & Cheatsheets</h2>
+                  </div>
+                  <div className="text-sm text-gray-600 mb-8 leading-relaxed">
+                    {activeLesson?.article_content || 'Review these critical reference materials and keep them handy.'}
+                  </div>
+                  <Button type="primary" onClick={() => {
+                      completeLessonMutation.mutate({ lessonId: activeLesson.id, lastPositionSeconds: 100, watchPercentage: 100 });
+                      message.success('Reference materials marked as read!');
+                    }} className="!bg-black font-semibold rounded-xl">
+                    Mark as Read & Continue
+                  </Button>
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl p-8 border border-gray-200 max-w-3xl mx-auto">
+                  <h2 className="text-2xl font-bold text-gray-900 mb-4">{activeLesson?.title}</h2>
+                  <div className="flex items-center gap-2 text-xs text-gray-500 mb-6 font-medium">
+                    <Clock className="w-4 h-4" />
+                    <span>Estimated reading time: {Math.max(1, Math.ceil((activeLesson?.article_content?.length || 0) / 1000))} min</span>
+                  </div>
+                  <div className="prose prose-sm sm:prose-base max-w-none text-gray-700 leading-loose mb-8 whitespace-pre-wrap">
+                    {activeLesson?.article_content || 'Read through the material carefully to complete this lesson.'}
+                  </div>
+                  <Button type="primary" icon={<CheckCircle2 className="w-4 h-4" />} size="large" onClick={() => {
+                      completeLessonMutation.mutate({ lessonId: activeLesson.id, lastPositionSeconds: 100, watchPercentage: 100 });
+                      message.success('Lesson marked as completed!');
+                    }} className="!bg-emerald-600 hover:!bg-emerald-700 font-semibold h-11 px-6 rounded-xl border-0">
+                    Mark as Read & Continue
+                  </Button>
+                </div>
+              )}
           </div>
 
           {/* Role-Based Video Metadata & Telemetry Tags Bar */}
@@ -608,6 +692,45 @@ export const LearningPlayerPage: React.FC = () => {
               </Button>
             )}
           </div>
+
+          {hasAttachments && (
+            <div className="mt-6 border-t border-gray-100 pt-6">
+              <div className="flex items-center gap-2 mb-4">
+                <FileText className="w-5 h-5 text-gray-700" />
+                <h3 className="text-base font-bold text-gray-900">Downloadable Course Resources</h3>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {activeLesson?.document_url && (
+                  <div className="flex items-center justify-between p-4 rounded-xl border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/50 transition-all">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <div className="w-10 h-10 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+                        <FileText className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-gray-900 truncate">Main Document</div>
+                        <div className="text-xs text-gray-500">PDF / Document</div>
+                      </div>
+                    </div>
+                    <Button type="text" icon={<Download className="w-4 h-4" />} onClick={() => window.open(activeLesson.document_url, '_blank')} className="text-indigo-600 hover:text-indigo-700 hover:bg-indigo-100" />
+                  </div>
+                )}
+                {activeLesson?.attachments?.map((att: any, idx: number) => (
+                  <div key={idx} className="flex items-center justify-between p-4 rounded-xl border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/50 transition-all">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <div className="w-10 h-10 rounded-lg bg-gray-100 text-gray-600 flex items-center justify-center shrink-0">
+                        <HardDrive className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-gray-900 truncate">{att.name || `Attachment ${idx + 1}`}</div>
+                        <div className="text-xs text-gray-500">{formatFileSize(att.size)}</div>
+                      </div>
+                    </div>
+                    <Button type="text" icon={<Download className="w-4 h-4" />} onClick={() => window.open(att.url, '_blank')} className="text-gray-600 hover:text-gray-900 hover:bg-gray-100" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Syllabus Sidebar */}

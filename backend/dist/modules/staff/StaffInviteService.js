@@ -210,8 +210,8 @@ class StaffInviteService {
             userId = existingUser.rows[0].id;
         }
         else {
-            const orgLookup = await (0, connection_1.executeQuery)(`SELECT org_prefix FROM ${this.schema}.organizations WHERE id = $1`, [invite.organization_id]);
-            const orgPrefix = orgLookup.rowCount > 0 ? orgLookup.rows[0].org_prefix : 'SYS';
+            const orgLookup = await (0, connection_1.executeQuery)(`SELECT COALESCE(org_prefix, 'ORG') as org_prefix FROM ${this.schema}.organizations WHERE id = $1`, [invite.organization_id]);
+            const orgPrefix = (orgLookup.rowCount > 0 ? orgLookup.rows[0].org_prefix : 'ORG') || 'ORG';
             const businessPrefix = orgPrefix + 'STF';
             const newUserRes = await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.users (business_id, email, password_hash, first_name, last_name, phone, is_active, email_verified, last_login_ip)
          VALUES (${this.schema}.generate_business_id($1), $2, $3, $4, $5, $6, TRUE, TRUE, $7)

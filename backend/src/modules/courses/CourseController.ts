@@ -212,6 +212,75 @@ export class CourseController {
       next(err);
     }
   }
+
+  async DeleteCourseSection(req: Request, res: Response, next: NextFunction) {
+    try {
+      const orgId = req.organizationId!;
+      const { sectionId } = req.params;
+      const result = await courseService.DeleteCourseSection(orgId, sectionId);
+      res.json(ApiResponse.success(result.message, result));
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async DeleteLesson(req: Request, res: Response, next: NextFunction) {
+    try {
+      const orgId = req.organizationId!;
+      const { lessonId } = req.params;
+      const result = await courseService.DeleteLesson(orgId, lessonId);
+      res.json(ApiResponse.success(result.message, result));
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async UploadLessonAttachment(req: Request, res: Response, next: NextFunction) {
+    try {
+      const orgId = req.organizationId!;
+      const { lessonId } = req.params;
+      if (!req.file) throw ApiError.badRequest('No file provided.');
+      const result = await courseService.UploadLessonAttachment(orgId, lessonId, req.file);
+      res.json(ApiResponse.success('Attachment uploaded successfully.', result));
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async ScaffoldCourseraFlow(req: Request, res: Response, next: NextFunction) {
+    try {
+      const orgId = req.organizationId!;
+      const { courseId } = req.params;
+      const result = await courseService.ScaffoldCourseraFlow(orgId, courseId);
+      res.json(ApiResponse.success('Coursera flow scaffolded successfully.', result));
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async SubmitCourseFeedback(req: Request, res: Response, next: NextFunction) {
+    try {
+      const orgId = req.organizationId!;
+      const userId = req.user!.userId;
+      const { courseId, rating, feedbackText } = req.body;
+      if (!courseId || rating === undefined) throw ApiError.badRequest('courseId and rating are required.');
+      const result = await courseService.SubmitCourseFeedback(orgId, userId, courseId, rating, feedbackText);
+      res.json(ApiResponse.success('Feedback submitted successfully.', result));
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async GetCourseFeedback(req: Request, res: Response, next: NextFunction) {
+    try {
+      const orgId = req.organizationId!;
+      const { courseId } = req.params;
+      const result = await courseService.GetCourseFeedback(orgId, courseId);
+      res.json(ApiResponse.success('Feedback retrieved successfully.', result));
+    } catch (err) {
+      next(err);
+    }
+  }
 }
 
 export const courseController = new CourseController();

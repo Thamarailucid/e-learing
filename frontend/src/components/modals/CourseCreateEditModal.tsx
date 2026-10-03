@@ -1,9 +1,11 @@
 import React, { useEffect } from 'react';
-import { Modal, Form, Input, Select, InputNumber, Switch, message, Tag, Alert } from 'antd';
+import { Modal, Form, Input, Select, InputNumber, Switch, message, Tag, Alert, Button } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookOpen, Award, CheckCircle2, Video, FileCheck, Layers, Lock, Shield } from 'lucide-react';
 import { ApiClient } from '../../services/api/ApiClient';
 import { taxonomyApi } from '../../services/api/taxonomyApi';
+
+import { CourseTaxonomiesManager } from '../taxonomies/CourseTaxonomiesManager';
 
 interface CourseCreateEditModalProps {
   open: boolean;
@@ -20,6 +22,7 @@ export const CourseCreateEditModal: React.FC<CourseCreateEditModalProps> = ({
 }) => {
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
+  const [taxonomiesModalOpen, setTaxonomiesModalOpen] = React.useState(false);
 
   // Dynamic Categories from DB
   const { data: categories = [], isLoading: loadingCategories } = useQuery({
@@ -80,6 +83,7 @@ export const CourseCreateEditModal: React.FC<CourseCreateEditModalProps> = ({
   };
 
   return (
+    <>
     <Modal
       open={open}
       title={
@@ -122,7 +126,12 @@ export const CourseCreateEditModal: React.FC<CourseCreateEditModalProps> = ({
             <div className="grid grid-cols-2 gap-3">
               <Form.Item
                 name="level"
-                label="Difficulty Level (DB-Driven)"
+                label={
+                  <div className="flex justify-between w-full items-center">
+                    <span>Difficulty Level</span>
+                    <Button type="link" size="small" onClick={() => setTaxonomiesModalOpen(true)} className="p-0 text-[10px]">+ Manage Classifications</Button>
+                  </div>
+                }
                 rules={[{ required: true, message: 'Select difficulty level' }]}
               >
                 <Select loading={loadingLevels} placeholder="Select difficulty level">
@@ -141,7 +150,12 @@ export const CourseCreateEditModal: React.FC<CourseCreateEditModalProps> = ({
 
               <Form.Item
                 name="category"
-                label="Category (DB-Driven)"
+                label={
+                  <div className="flex justify-between w-full items-center">
+                    <span>Category</span>
+                    <Button type="link" size="small" onClick={() => setTaxonomiesModalOpen(true)} className="p-0 text-[10px]">+ Manage Classifications</Button>
+                  </div>
+                }
                 rules={[{ required: true, message: 'Select category' }]}
               >
                 <Select loading={loadingCategories} placeholder="Select category">
@@ -224,5 +238,15 @@ export const CourseCreateEditModal: React.FC<CourseCreateEditModalProps> = ({
         </div>
       </Form>
     </Modal>
+    <Modal
+      title="Manage Classifications"
+      open={taxonomiesModalOpen}
+      onCancel={() => setTaxonomiesModalOpen(false)}
+      footer={null}
+      width={800}
+    >
+      <CourseTaxonomiesManager />
+    </Modal>
+    </>
   );
 };
