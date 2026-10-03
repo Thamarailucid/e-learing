@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, Form, Input, Button, message, Upload, Tag, Tabs } from 'antd';
-import { Palette, Check, ExternalLink, Image as ImageIcon, Building, UploadCloud, Info, Layers, Award } from 'lucide-react';
+import { Palette, Check, ExternalLink, Image as ImageIcon, Building, UploadCloud, Info, Layers, Award, Server, RefreshCw } from 'lucide-react';
 import { ApiClient } from '../../services/api/ApiClient';
 import { RbaPageHeader } from '../../components/common/RbaPageHeader';
 import { useTheme } from '../../components/theme/ThemeProvider';
 import { CourseTaxonomiesManager } from '../../components/taxonomies/CourseTaxonomiesManager';
 import { CertificateView } from '../../components/certificate/CertificateView';
+import { getCurrentVersionInfo, fetchLatestVersionInfo } from '../../utils/versionManager';
 
 export const OrganizationSettingsPage: React.FC = () => {
   const [themeForm] = Form.useForm();
@@ -18,6 +19,10 @@ export const OrganizationSettingsPage: React.FC = () => {
   const [uploadingFavicon, setUploadingFavicon] = useState(false);
   const [uploadingBackground, setUploadingBackground] = useState(false);
   const [uploadingSignature, setUploadingSignature] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [latestVersionStatus, setLatestVersionStatus] = useState<'up-to-date' | 'update-available' | null>(null);
+
+  const currentVersionInfo = getCurrentVersionInfo();
 
   // Load Organization Details
   const { data: orgDetails } = useQuery({
@@ -563,6 +568,80 @@ export const OrganizationSettingsPage: React.FC = () => {
                     </Form.Item>
                   </div>
                 </div>
+              </div>
+            ),
+          },
+          {
+            key: 'system',
+            label: (
+              <span className="flex items-center gap-2 font-medium">
+                <Server className="w-4 h-4 text-emerald-500" /> System Version & Updates
+              </span>
+            ),
+            children: (
+              <div className="space-y-6 mt-2">
+                <Card className="!rounded-2xl border-gray-200 overflow-hidden shadow-sm" bodyStyle={{ padding: '24px' }}>
+                  <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+                    <div>
+                      <div className="flex items-center gap-3 mb-2">
+                        <h3 className="text-lg font-bold text-gray-900">NovaCodex System Core</h3>
+                        {latestVersionStatus === 'update-available' ? (
+                          <Tag color="error" className="m-0 font-semibold rounded-md border-0 bg-rose-50 text-rose-700">Update Available</Tag>
+                        ) : latestVersionStatus === 'up-to-date' ? (
+                          <Tag color="success" className="m-0 font-semibold rounded-md border-0 bg-emerald-50 text-emerald-700">Up to Date</Tag>
+                        ) : (
+                          <Tag color="default" className="m-0 font-semibold rounded-md border-0 bg-gray-50 text-gray-600">Active</Tag>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-500 mb-6">Currently running application version and build telemetry.</p>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-12 gap-y-4">
+                        <div>
+                          <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">Installed Version</div>
+                          <div className="text-sm font-mono font-semibold text-gray-800">v{currentVersionInfo.version}</div>
+                        </div>
+                        <div>
+                          <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">Build ID</div>
+                          <div className="text-sm font-mono text-gray-600">{currentVersionInfo.buildId}</div>
+                        </div>
+                        <div>
+                          <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mb-1">Build Date & Time</div>
+                          <div className="text-sm text-gray-700">
+                            {currentVersionInfo.buildTime ? new Date(currentVersionInfo.buildTime).toLocaleString() : 'Development Build'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="w-full lg:w-auto bg-gray-50 rounded-xl p-5 border border-gray-100 flex flex-col items-center justify-center text-center">
+                      <Server className="w-8 h-8 text-indigo-500 mb-3" />
+                      <div className="text-sm font-semibold text-gray-900 mb-1">Check for Updates</div>
+                      <div className="text-xs text-gray-500 mb-4 max-w-[200px]">Ping the NovaTrax update servers to verify system integrity.</div>
+                      <Button 
+                        type="primary" 
+                        icon={<RefreshCw className={`w-4 h-4 ${checkingUpdate ? 'animate-spin' : ''}`} />}
+                        loading={checkingUpdate}
+                        onClick={async () => {
+                          setCheckingUpdate(true);
+                          const latest = await fetchLatestVersionInfo();
+                          setCheckingUpdate(false);
+                          if (!latest) {
+                            message.error('Failed to contact update server.');
+                          } else if (latest.version !== currentVersionInfo.version || (latest.buildTime > currentVersionInfo.buildTime)) {
+                            setLatestVersionStatus('update-available');
+                            message.warning(`New version v${latest.version} is available!`);
+                          } else {
+                            setLatestVersionStatus('up-to-date');
+                            message.success('System is up to date.');
+                          }
+                        }}
+                        className="!bg-black font-semibold rounded-xl w-full h-10"
+                      >
+                        Check Now
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
               </div>
             ),
           },

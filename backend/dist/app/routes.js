@@ -1,7 +1,12 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createApiRouter = createApiRouter;
 const express_1 = require("express");
+const fs_1 = __importDefault(require("fs"));
+const path_1 = __importDefault(require("path"));
 const AuthRoutes_1 = require("../modules/auth/AuthRoutes");
 const SuperAdminRoutes_1 = require("../modules/superadmin/SuperAdminRoutes");
 const OrganizationRoutes_1 = require("../modules/organizations/OrganizationRoutes");
@@ -33,6 +38,35 @@ function createApiRouter() {
     // Health check endpoint
     router.get('/health', (_req, res) => {
         res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+    });
+    // System version endpoint
+    router.get('/system/version', (_req, res) => {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+        let versionData = {
+            success: true,
+            version: '1.3.0',
+            buildTime: Date.now(),
+            buildId: 'novacodex-v1.3.0-stable',
+            platform: 'NovaCodex Platform',
+            minVersion: '1.0.0',
+            releaseNotes: 'Coursera Scaffolding, Advanced Attachment Manager, Multi-stage Assessments, and HLS Streaming'
+        };
+        try {
+            const publicPath = path_1.default.join(process.cwd(), 'public', 'version.json');
+            const distPath = path_1.default.join(process.cwd(), 'dist', 'version.json');
+            if (fs_1.default.existsSync(publicPath)) {
+                versionData = { ...versionData, ...JSON.parse(fs_1.default.readFileSync(publicPath, 'utf8')) };
+            }
+            else if (fs_1.default.existsSync(distPath)) {
+                versionData = { ...versionData, ...JSON.parse(fs_1.default.readFileSync(distPath, 'utf8')) };
+            }
+        }
+        catch (err) {
+            // ignore
+        }
+        res.json(versionData);
     });
     return router;
 }

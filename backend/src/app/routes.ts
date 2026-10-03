@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import fs from 'fs';
+import path from 'path';
 import { AuthRoutes } from '../modules/auth/AuthRoutes';
 import { SuperAdminRoutes } from '../modules/superadmin/SuperAdminRoutes';
 import { OrganizationRoutes } from '../modules/organizations/OrganizationRoutes';
@@ -33,6 +35,38 @@ export function createApiRouter(): Router {
   // Health check endpoint
   router.get('/health', (_req, res) => {
     res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+  });
+
+  // System version endpoint
+  router.get('/system/version', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
+    let versionData: any = {
+      success: true,
+      version: '1.3.0',
+      buildTime: Date.now(),
+      buildId: 'novacodex-v1.3.0-stable',
+      platform: 'NovaCodex Platform',
+      minVersion: '1.0.0',
+      releaseNotes: 'Coursera Scaffolding, Advanced Attachment Manager, Multi-stage Assessments, and HLS Streaming'
+    };
+
+    try {
+      const publicPath = path.join(process.cwd(), 'public', 'version.json');
+      const distPath = path.join(process.cwd(), 'dist', 'version.json');
+      
+      if (fs.existsSync(publicPath)) {
+        versionData = { ...versionData, ...JSON.parse(fs.readFileSync(publicPath, 'utf8')) };
+      } else if (fs.existsSync(distPath)) {
+        versionData = { ...versionData, ...JSON.parse(fs.readFileSync(distPath, 'utf8')) };
+      }
+    } catch (err) {
+      // ignore
+    }
+
+    res.json(versionData);
   });
 
   return router;

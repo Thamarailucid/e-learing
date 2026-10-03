@@ -41,6 +41,40 @@ export function createApp(): Application {
   // 4. API Routes
   app.use(EnvironmentConfig.application.apiPrefix, createApiRouter());
 
+  // Also expose system/version at root
+  app.get('/system/version', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
+    let versionData: any = {
+      success: true,
+      version: '1.3.0',
+      buildTime: Date.now(),
+      buildId: 'novacodex-v1.3.0-stable',
+      platform: 'NovaCodex Platform',
+      minVersion: '1.0.0',
+      releaseNotes: 'Coursera Scaffolding, Advanced Attachment Manager, Multi-stage Assessments, and HLS Streaming'
+    };
+
+    try {
+      // Need fs imported at the top
+      const fs = require('fs');
+      const publicPath = path.join(process.cwd(), 'public', 'version.json');
+      const distPath = path.join(process.cwd(), 'dist', 'version.json');
+      
+      if (fs.existsSync(publicPath)) {
+        versionData = { ...versionData, ...JSON.parse(fs.readFileSync(publicPath, 'utf8')) };
+      } else if (fs.existsSync(distPath)) {
+        versionData = { ...versionData, ...JSON.parse(fs.readFileSync(distPath, 'utf8')) };
+      }
+    } catch (err) {
+      // ignore
+    }
+
+    res.json(versionData);
+  });
+
   // 5. Global Centralized Error Handler
   app.use(ErrorHandler);
 
