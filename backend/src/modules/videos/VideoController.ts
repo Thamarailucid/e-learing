@@ -88,6 +88,17 @@ export class VideoController {
       next(err);
     }
   }
+
+  async RetryTranscoding(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const orgId = req.organizationId!;
+      const { lessonId } = req.params;
+      const result = await videoService.RetryTranscoding(orgId, lessonId);
+      res.json(ApiResponse.success('Transcoding retried.', result));
+    } catch (err) {
+      next(err);
+    }
+  }
 }
 
 export const videoController = new VideoController();

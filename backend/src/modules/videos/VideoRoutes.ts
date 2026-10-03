@@ -19,9 +19,15 @@ router.get('/GenerateVideoPlaybackUrl/:lessonId', (req, res, next) =>
   videoController.GenerateVideoPlaybackUrl(req, res, next)
 );
 
-// Transcoding Status
+// Transcoding Status & Retry
 router.get('/GetTranscodingStatus/:lessonId', (req, res, next) =>
   videoController.GetTranscodingStatus(req, res, next)
+);
+
+router.post(
+  '/RetryTranscoding/:lessonId',
+  AuthorizeRoles('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'),
+  (req, res, next) => videoController.RetryTranscoding(req, res, next)
 );
 
 

@@ -76,12 +76,13 @@ export class TranscodingService {
       const sourcePath = path.join(workDir, 'source.mp4');
       await this.downloadFromS3(job.sourceKey, sourcePath);
 
-      // 2. Probe source video for height and duration
+      // 2. Probe source video for height, duration, and audio stream presence
       console.log(`[TranscodingService] Probing video...`);
       const probeData = await this.probeVideo(sourcePath);
       const sourceHeight = probeData.height;
       const durationSeconds = Math.round(probeData.duration);
-      console.log(`[TranscodingService] Source: ${sourceHeight}p, ${durationSeconds}s`);
+      const hasAudio = probeData.hasAudio;
+      console.log(`[TranscodingService] Source: ${sourceHeight}p, ${durationSeconds}s, hasAudio: ${hasAudio}`);
 
       // 3. Filter profiles to only include heights <= source height
       let applicableProfiles = this.PROFILES.filter(p => p.height <= sourceHeight);
@@ -102,7 +103,7 @@ export class TranscodingService {
         const profileDir = path.join(workDir, `v${profile.height}`);
         fs.mkdirSync(profileDir, { recursive: true });
         console.log(`[TranscodingService] Transcoding ${profile.quality}...`);
-        await this.transcodeResolution(sourcePath, profileDir, profile);
+        await this.transcodeResolution(sourcePath, profileDir, profile, hasAudio);
       }
 
       // 5. Generate master.m3u8
@@ -157,21 +158,40 @@ export class TranscodingService {
   /**
    * Transcode source to a single resolution using FFmpeg HLS output.
    */
-  private async transcodeResolution(sourcePath: string, outputDir: string, profile: ResolutionProfile): Promise<void> {
+  private async transcodeResolution(
+    sourcePath: string,
+    outputDir: string,
+    profile: ResolutionProfile,
+    hasAudio: boolean
+  ): Promise<void> {
     const segmentPattern = path.join(outputDir, 'segment_%04d.ts');
     const playlistPath = path.join(outputDir, 'playlist.m3u8');
 
     const args = [
       '-i', sourcePath,
+      '-map', '0:v:0', // Explicitly take only the first video stream
+    ];
+
+    if (hasAudio) {
+      args.push(
+        '-map', '0:a:0?', // Map audio if present
+        '-c:a', 'aac',
+        '-b:a', profile.audioBitrate,
+        '-ac', '2'
+      );
+    } else {
+      args.push('-an'); // No audio track
+    }
+
+    args.push(
+      '-sn', // Disable subtitle streams (prevents WebVTT in MPEG-TS muxer failure)
+      '-dn', // Disable data streams
       '-vf', `scale=-2:${profile.height}`,
       '-c:v', 'libx264',
-      '-preset', 'medium',
+      '-preset', 'veryfast', // veryfast uses significantly less CPU on t3.micro
       '-b:v', profile.videoBitrate,
       '-maxrate', profile.maxrate,
       '-bufsize', profile.bufsize,
-      '-c:a', 'aac',
-      '-b:a', profile.audioBitrate,
-      '-ac', '2',
       '-g', '48',
       '-keyint_min', '48',
       '-sc_threshold', '0',
@@ -180,7 +200,7 @@ export class TranscodingService {
       '-hls_playlist_type', 'vod',
       '-hls_segment_filename', segmentPattern,
       playlistPath,
-    ];
+    );
 
     await execFileAsync('ffmpeg', args, { maxBuffer: 50 * 1024 * 1024 });
   }
@@ -224,24 +244,25 @@ export class TranscodingService {
   /**
    * Probe video file for height and duration using ffprobe.
    */
-  private async probeVideo(filePath: string): Promise<{ height: number; duration: number }> {
+  private async probeVideo(filePath: string): Promise<{ height: number; duration: number; hasAudio: boolean }> {
     try {
       const { stdout } = await execFileAsync('ffprobe', [
         '-v', 'error',
-        '-select_streams', 'v:0',
-        '-show_entries', 'stream=height',
+        '-show_entries', 'stream=index,codec_type,height',
         '-show_entries', 'format=duration',
         '-of', 'json',
         filePath,
       ]);
 
       const data = JSON.parse(stdout);
-      const height = data?.streams?.[0]?.height || 1080;
+      const videoStream = data?.streams?.find((s: any) => s.codec_type === 'video');
+      const hasAudio = !!data?.streams?.some((s: any) => s.codec_type === 'audio');
+      const height = videoStream?.height || 1080;
       const duration = parseFloat(data?.format?.duration || '0');
-      return { height, duration };
+      return { height, duration, hasAudio };
     } catch (err) {
       console.warn('[TranscodingService] ffprobe failed, using defaults:', err);
-      return { height: 1080, duration: 0 };
+      return { height: 1080, duration: 0, hasAudio: true };
     }
   }
 

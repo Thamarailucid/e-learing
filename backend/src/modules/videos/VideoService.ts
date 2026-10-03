@@ -234,6 +234,43 @@ export class VideoService {
       hlsErrorMessage: row.hls_error_message
     };
   }
+
+  async RetryTranscoding(organizationId: string, lessonId: string) {
+    const lessonRes = await executeQuery(
+      `SELECT id, source_video_key, video_url FROM ${this.schema}.lessons WHERE id = $1 AND organization_id = $2`,
+      [lessonId, organizationId]
+    );
+    if (lessonRes.rowCount === 0) throw ApiError.notFound('Lesson not found.');
+    const lesson = lessonRes.rows[0];
+
+    // If source_video_key is not set, extract from video_url
+    let sourceKey = lesson.source_video_key;
+    if (!sourceKey && lesson.video_url) {
+      try {
+        const url = new URL(lesson.video_url);
+        sourceKey = url.pathname.replace(/^\//, '');
+      } catch {
+        sourceKey = lesson.video_url;
+      }
+    }
+
+    if (!sourceKey) {
+      throw ApiError.badRequest('No source video found to transcode.');
+    }
+
+    await executeQuery(
+      `UPDATE ${this.schema}.lessons SET hls_status = 'QUEUED', hls_error_message = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      [lessonId]
+    );
+
+    transcodingQueue.enqueue({
+      lessonId,
+      organizationId,
+      sourceKey,
+    }).catch(console.error);
+
+    return { success: true, message: 'Transcoding job enqueued successfully.' };
+  }
 }
 
 export const videoService = new VideoService();

@@ -234,6 +234,20 @@ export const CourseBuilderPage: React.FC = () => {
     },
   });
 
+  // 11. Retry Transcoding Mutation
+  const retryTranscodingMutation = useMutation({
+    mutationFn: async (lessonId: string) => {
+      return ApiClient.post(`/videos/RetryTranscoding/${lessonId}`);
+    },
+    onSuccess: () => {
+      message.success('Transcoding re-enqueued! Processing in background...');
+      queryClient.invalidateQueries({ queryKey: ['course-details', courseId] });
+    },
+    onError: (err: any) => {
+      message.error(err.response?.data?.message || 'Failed to retry transcoding.');
+    },
+  });
+
   const location = useLocation();
   let backPath = '/instructor/dashboard';
   if (location.pathname.startsWith('/organization')) {
@@ -410,9 +424,23 @@ export const CourseBuilderPage: React.FC = () => {
                               </Tag>
                             )}
                             {lesson.hls_status === 'FAILED' && (
-                              <Tag color="error" className="!text-[10px] !px-1.5 !py-0 !leading-4 rounded flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span> Failed
-                              </Tag>
+                              <div className="flex items-center gap-1">
+                                <Tag color="error" className="!text-[10px] !px-1.5 !py-0 !leading-4 rounded flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span> Failed
+                                </Tag>
+                                <Button
+                                  size="small"
+                                  type="link"
+                                  className="!text-[10px] !p-0 !h-auto text-blue-600 font-semibold"
+                                  loading={retryTranscodingMutation.isPending}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    retryTranscodingMutation.mutate(lesson.id);
+                                  }}
+                                >
+                                  (Retry HLS)
+                                </Button>
+                              </div>
                             )}
                           </div>
                           <div className="text-[11px] text-gray-500">
