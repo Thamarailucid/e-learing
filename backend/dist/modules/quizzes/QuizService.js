@@ -261,6 +261,101 @@ class QuizService {
             throw ApiError_1.ApiError.notFound('Question not found.');
         return { success: true, message: 'Question deleted successfully' };
     }
+    async EnsureModuleQuiz(organizationId, sectionId, courseId) {
+        // Check if quiz exists
+        const existingQuizRes = await (0, connection_1.executeQuery)(`SELECT id FROM ${this.schema}.quizzes WHERE section_id = $1 AND organization_id = $2 LIMIT 1`, [sectionId, organizationId]);
+        if ((existingQuizRes.rowCount ?? 0) > 0) {
+            return this.GetQuizDetails(organizationId, existingQuizRes.rows[0].id, false);
+        }
+        const lessonQuizRes = await (0, connection_1.executeQuery)(`SELECT quiz_id FROM ${this.schema}.lessons WHERE section_id = $1 AND content_type = 'QUIZ' AND organization_id = $2 AND quiz_id IS NOT NULL LIMIT 1`, [sectionId, organizationId]);
+        if ((lessonQuizRes.rowCount ?? 0) > 0) {
+            return this.GetQuizDetails(organizationId, lessonQuizRes.rows[0].quiz_id, false);
+        }
+        // Query section title
+        const sectionRes = await (0, connection_1.executeQuery)(`SELECT title FROM ${this.schema}.course_sections WHERE id = $1 AND organization_id = $2`, [sectionId, organizationId]);
+        if (sectionRes.rowCount === 0)
+            throw ApiError_1.ApiError.notFound('Course section not found.');
+        const sectionTitle = sectionRes.rows[0].title;
+        const questions = [
+            {
+                questionText: "Module Quiz Question 1: What is the primary takeaway of this module?",
+                options: ["Core Principle A", "Alternative Concept B", "Misconception C", "Secondary Detail D"],
+                correctAnswer: "Core Principle A",
+                explanation: "Choose the best answer representing core module foundations.",
+                points: 1
+            },
+            {
+                questionText: "Module Quiz Question 2: Which methodology best applies to this module?",
+                options: ["Standard Practice", "Unsupported Hypothesis", "Unverified Approach", "Random Trial"],
+                correctAnswer: "Standard Practice",
+                explanation: "Standard industry methodology.",
+                points: 1
+            },
+            {
+                questionText: "Module Quiz Question 3: How should this module's concept be implemented?",
+                options: ["Recommended Workflow", "Outdated Routine", "Incomplete Step", "Legacy Pattern"],
+                correctAnswer: "Recommended Workflow",
+                explanation: "Recommended workflow is the best choice.",
+                points: 1
+            }
+        ];
+        const quiz = await this.CreateQuiz(organizationId, {
+            courseId,
+            sectionId,
+            title: `${sectionTitle} - Knowledge Check`,
+            quizType: 'MODULE',
+            passingScorePercentage: 70,
+            maxAttempts: 1,
+            timeLimitMinutes: 15,
+            questions
+        });
+        // Query current max order_index of lessons in this section
+        const orderRes = await (0, connection_1.executeQuery)(`SELECT COALESCE(MAX(order_index), -1) as max_order FROM ${this.schema}.lessons WHERE section_id = $1`, [sectionId]);
+        const maxOrderIndex = parseInt(orderRes.rows[0].max_order, 10);
+        await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.lessons (
+         organization_id, course_id, section_id, title, content_type, order_index, quiz_id
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7)`, [organizationId, courseId, sectionId, `${sectionTitle} Quiz`, 'QUIZ', maxOrderIndex + 1, quiz.id]);
+        // Update student_course_progress.total_lessons_count
+        const lessonsCountRes = await (0, connection_1.executeQuery)(`SELECT COUNT(*) as count FROM ${this.schema}.lessons WHERE course_id = $1`, [courseId]);
+        const totalLessons = parseInt(lessonsCountRes.rows[0].count, 10);
+        await (0, connection_1.executeQuery)(`UPDATE ${this.schema}.student_course_progress SET total_lessons_count = $1 WHERE course_id = $2`, [totalLessons, courseId]);
+        return this.GetQuizDetails(organizationId, quiz.id, false);
+    }
+    async EnsureFinalCourseQuiz(organizationId, courseId) {
+        const existingRes = await (0, connection_1.executeQuery)(`SELECT id FROM ${this.schema}.quizzes WHERE course_id = $1 AND quiz_type = 'FINAL' AND organization_id = $2 LIMIT 1`, [courseId, organizationId]);
+        if ((existingRes.rowCount ?? 0) > 0) {
+            return this.GetQuizDetails(organizationId, existingRes.rows[0].id, false);
+        }
+        const sectionsRes = await (0, connection_1.executeQuery)(`SELECT id FROM ${this.schema}.course_sections WHERE course_id = $1 AND organization_id = $2 ORDER BY order_index DESC LIMIT 1`, [courseId, organizationId]);
+        if (sectionsRes.rowCount === 0)
+            throw ApiError_1.ApiError.notFound('No sections found for this course.');
+        const finalSectionId = sectionsRes.rows[0].id;
+        const questions = Array.from({ length: 10 }, (_, i) => ({
+            questionText: `Final Exam Question ${i + 1}`,
+            options: ['Option A', 'Option B', 'Option C', 'Option D'],
+            correctAnswer: 'Option A',
+            explanation: 'Choose the best answer.',
+            points: 1
+        }));
+        const quiz = await this.CreateQuiz(organizationId, {
+            courseId,
+            sectionId: finalSectionId,
+            title: 'Final Comprehensive Exam',
+            quizType: 'FINAL',
+            passingScorePercentage: 80,
+            maxAttempts: undefined,
+            questions
+        });
+        const orderRes = await (0, connection_1.executeQuery)(`SELECT COALESCE(MAX(order_index), -1) as max_order FROM ${this.schema}.lessons WHERE section_id = $1`, [finalSectionId]);
+        const maxOrderIndex = parseInt(orderRes.rows[0].max_order, 10);
+        await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.lessons (
+         organization_id, course_id, section_id, title, content_type, order_index, quiz_id
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7)`, [organizationId, courseId, finalSectionId, 'Final Comprehensive Exam', 'QUIZ', maxOrderIndex + 1, quiz.id]);
+        const lessonsCountRes = await (0, connection_1.executeQuery)(`SELECT COUNT(*) as count FROM ${this.schema}.lessons WHERE course_id = $1`, [courseId]);
+        const totalLessons = parseInt(lessonsCountRes.rows[0].count, 10);
+        await (0, connection_1.executeQuery)(`UPDATE ${this.schema}.student_course_progress SET total_lessons_count = $1 WHERE course_id = $2`, [totalLessons, courseId]);
+        return this.GetQuizDetails(organizationId, quiz.id, false);
+    }
 }
 exports.QuizService = QuizService;
 exports.quizService = new QuizService();

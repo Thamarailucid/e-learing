@@ -54,4 +54,16 @@ router.delete('/DeleteQuizAttachment/:quizId', AuthorizeRoles('ORGANIZATION_OWNE
 router.post('/SubmitQuizAttempt', (req, res, next) => quizController.SubmitQuizAttempt(req, res, next));
 router.get('/GetStudentQuizAttempts/:quizId', (req, res, next) => quizController.GetStudentQuizAttempts(req, res, next));
 
+router.post(
+  '/EnsureModuleQuiz/:sectionId',
+  AuthorizeRoles('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'),
+  (req, res, next) => quizController.EnsureModuleQuiz(req, res, next)
+);
+
+router.post(
+  '/EnsureFinalCourseQuiz/:courseId',
+  AuthorizeRoles('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'),
+  (req, res, next) => quizController.EnsureFinalCourseQuiz(req, res, next)
+);
+
 export const QuizRoutes = router;

@@ -183,6 +183,31 @@ class QuizController {
             next(err);
         }
     }
+    async EnsureModuleQuiz(req, res, next) {
+        try {
+            const orgId = req.organizationId;
+            const { sectionId } = req.params;
+            const { courseId } = req.body;
+            if (!courseId)
+                throw ApiError_1.ApiError.badRequest('courseId is required in body.');
+            const result = await QuizService_1.quizService.EnsureModuleQuiz(orgId, sectionId, courseId);
+            res.json(ApiResponse_1.ApiResponse.success('Module quiz ensured.', result));
+        }
+        catch (err) {
+            next(err);
+        }
+    }
+    async EnsureFinalCourseQuiz(req, res, next) {
+        try {
+            const orgId = req.organizationId;
+            const { courseId } = req.params;
+            const result = await QuizService_1.quizService.EnsureFinalCourseQuiz(orgId, courseId);
+            res.json(ApiResponse_1.ApiResponse.success('Final course quiz ensured.', result));
+        }
+        catch (err) {
+            next(err);
+        }
+    }
 }
 exports.QuizController = QuizController;
 exports.quizController = new QuizController();

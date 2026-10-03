@@ -369,6 +369,20 @@ export const CourseBuilderPage: React.FC = () => {
     },
   });
 
+  const ensureModuleQuizMutation = useMutation({
+    mutationFn: async (sectionId: string) => {
+      return ApiClient.post(`/quizzes/EnsureModuleQuiz/${sectionId}`, { courseId });
+    },
+    onSuccess: (res) => {
+      message.success('Module Quiz initialized.');
+      queryClient.invalidateQueries({ queryKey: ['course-details', courseId] });
+      if (res.data?.data) {
+        setManagingQuizContext(res.data.data);
+        setQuizQuestionsModalOpen(true);
+      }
+    },
+  });
+
   const location = useLocation();
   let backPath = '/instructor/dashboard';
   if (location.pathname.startsWith('/organization')) {
@@ -376,6 +390,53 @@ export const CourseBuilderPage: React.FC = () => {
   }
 
   if (isLoading) return <div className="p-8 text-center text-sm text-gray-500">Loading curriculum...</div>;
+
+  const renderQuizQuestionsPreview = (quizData: any) => {
+    if (!quizData) return null;
+    return (
+      <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
+        <div className="flex items-center justify-between mb-3 border-b border-gray-100 pb-2">
+          <div className="font-semibold text-xs text-purple-700 flex items-center gap-1.5">
+            <HelpCircle className="w-3.5 h-3.5" />
+            Interactive Quiz Preview
+          </div>
+          <Button size="small" type="primary" onClick={() => {
+            setManagingQuizContext(quizData);
+            setQuizQuestionsModalOpen(true);
+          }}>
+            Edit Questions
+          </Button>
+        </div>
+        {!quizData.questions || quizData.questions.length === 0 ? (
+          <div className="text-[11px] text-gray-500 text-center py-4 bg-gray-50 rounded border border-dashed border-gray-200">
+            No questions added yet. Click 'Edit Questions' to manage.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {quizData.questions.map((q: any, i: number) => (
+              <div key={i} className="p-2 border border-gray-100 rounded bg-gray-50 text-[11px]">
+                <div className="font-semibold mb-1">{i + 1}. {q.question_text || q.questionText}</div>
+                <div className="grid grid-cols-1 gap-1 mb-1">
+                  {(q.options || []).map((opt: string, j: number) => (
+                    <div key={j} className="flex items-center gap-1">
+                      <span className="font-semibold bg-white w-4 h-4 flex items-center justify-center rounded border border-gray-200 text-[9px]">
+                        {String.fromCharCode(65 + j)}
+                      </span>
+                      <span className={opt === (q.correct_answer || q.correctAnswer) ? "text-emerald-700 font-medium" : "text-gray-600"}>
+                        {opt}
+                      </span>
+                      {opt === (q.correct_answer || q.correctAnswer) && <CheckCircle className="w-3 h-3 text-emerald-500" />}
+                    </div>
+                  ))}
+                </div>
+                {q.explanation && <div className="text-gray-500 italic">Exp: {q.explanation}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="max-w-5xl mx-auto pb-16">
@@ -483,12 +544,31 @@ export const CourseBuilderPage: React.FC = () => {
             <p className="text-sm text-gray-500">No modules created yet. Click "Add Module Section" to start.</p>
           </Card>
         ) : (
-          course?.sections?.map((section: any) => (
+          course?.sections?.map((section: any) => {
+            const quizLesson = section.lessons?.find((l: any) => l.content_type === 'QUIZ');
+            return (
             <Card
               key={section.id}
               title={<span className="font-semibold text-sm cursor-pointer hover:text-indigo-600 transition-colors" onClick={() => setPreviewSelection({ type: 'MODULE', data: section })}>{section.title}</span>}
               extra={
                 <div className="flex gap-2 items-center">
+                  <Button
+                    size="small"
+                    type="dashed"
+                    icon={<HelpCircle className="w-3.5 h-3.5 text-purple-600" />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (quizLesson) {
+                        setManagingQuizContext(quizLesson);
+                        setQuizQuestionsModalOpen(true);
+                      } else {
+                        ensureModuleQuizMutation.mutate(section.id);
+                      }
+                    }}
+                    className="text-purple-700 border-purple-200 bg-purple-50 hover:bg-purple-100 font-semibold"
+                  >
+                    Manage Module Quiz (3 Qs)
+                  </Button>
                   <Button
                     size="small"
                     type="link"
@@ -696,7 +776,13 @@ export const CourseBuilderPage: React.FC = () => {
                             </div>
                         )}
                         <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1">
-                          <Button size="small" type="text" icon={<Pencil className="w-3.5 h-3.5 text-blue-500" />} onClick={(e) => { e.stopPropagation(); setEditingLesson(lesson); editLessonForm.setFieldsValue(lesson); setEditLessonModalOpen(true); }} />
+                          {lesson.content_type === 'QUIZ' ? (
+                            <Button size="small" type="dashed" className="text-purple-600 border-purple-200 hover:bg-purple-50 text-[10px]" icon={<Pencil className="w-3 h-3" />} onClick={(e) => { e.stopPropagation(); setManagingQuizContext(lesson); setQuizQuestionsModalOpen(true); }}>
+                              Manage Quiz Questions (MCQ)
+                            </Button>
+                          ) : (
+                            <Button size="small" type="text" icon={<Pencil className="w-3.5 h-3.5 text-blue-500" />} onClick={(e) => { e.stopPropagation(); setEditingLesson(lesson); editLessonForm.setFieldsValue(lesson); setEditLessonModalOpen(true); }} />
+                          )}
                           <Popconfirm title="Delete Lesson" description="Are you sure you want to delete this lesson?" onConfirm={() => deleteLessonMutation.mutate(lesson.id)} okText="Delete" cancelText="Cancel" okButtonProps={{ danger: true }}>
                             <Button size="small" type="text" danger icon={<Trash2 className="w-3.5 h-3.5 text-rose-500" />} />
                           </Popconfirm>
@@ -706,9 +792,29 @@ export const CourseBuilderPage: React.FC = () => {
                   ))}
                 </div>
               )}
+              {!quizLesson && (
+                <div className="mt-3 p-4 bg-gray-50 rounded-xl border border-dashed border-gray-300 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-gray-600 text-xs">
+                    <FileText className="w-4 h-4 text-gray-400" />
+                    <span>📝 <strong>Module Assessment:</strong> No quiz configured for this module yet.</span>
+                  </div>
+                  <Button
+                    type="primary"
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      ensureModuleQuizMutation.mutate(section.id);
+                    }}
+                    loading={ensureModuleQuizMutation.isPending}
+                  >
+                    + Initialize 3-Question Module Quiz
+                  </Button>
+                </div>
+              )}
             </Card>
-          ))
-        )}
+          );
+        })
+      )}
         </div>
 
         
@@ -742,16 +848,20 @@ export const CourseBuilderPage: React.FC = () => {
                     </div>
                   </div>
                 </div>
-                <div className="bg-purple-50 p-3 rounded-lg border border-purple-100">
-                  <div className="flex items-center gap-2 mb-1 text-purple-800 font-semibold text-xs">
-                    <HelpCircle className="w-3.5 h-3.5" /> Module Quiz Status
-                  </div>
-                  <div className="text-xs text-purple-600">
-                    {previewSelection.data.lessons?.filter((l: any) => l.content_type === 'QUIZ')?.length > 0 
-                      ? 'Quiz active (3 Questions • 1 Try)'
-                      : 'No quiz assigned to this module.'}
-                  </div>
-                </div>
+                {(() => {
+                  const ql = previewSelection.data.lessons?.find((l: any) => l.content_type === 'QUIZ');
+                  if (!ql) {
+                    return (
+                      <div className="bg-purple-50 p-4 rounded-lg border border-purple-100 flex flex-col items-center justify-center text-center">
+                         <HelpCircle className="w-6 h-6 text-purple-400 mb-2" />
+                         <div className="text-sm font-semibold text-purple-900 mb-1">No Module Quiz</div>
+                         <div className="text-xs text-purple-700 mb-3">Initialize a 3-question MCQ quiz to assess student comprehension.</div>
+                         <Button type="primary" size="small" onClick={() => ensureModuleQuizMutation.mutate(previewSelection.data.id)}>+ Setup 3-Question Quiz</Button>
+                      </div>
+                    );
+                  }
+                  return renderQuizQuestionsPreview(ql);
+                })()}
               </div>
             ) : (
               <div className="space-y-4">
@@ -783,25 +893,7 @@ export const CourseBuilderPage: React.FC = () => {
                   </div>
                 )}
 
-                {previewSelection.data.content_type === 'QUIZ' && (
-                  <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
-                    <div className="flex items-center justify-between mb-3 border-b border-gray-100 pb-2">
-                      <div className="font-semibold text-xs text-purple-700 flex items-center gap-1.5">
-                        <HelpCircle className="w-3.5 h-3.5" />
-                        Interactive Quiz Preview
-                      </div>
-                      <Button size="small" type="primary" onClick={() => {
-                        setManagingQuizContext(previewSelection.data);
-                        setQuizQuestionsModalOpen(true);
-                      }}>
-                        Manage Questions
-                      </Button>
-                    </div>
-                    <div className="text-[11px] text-gray-500 text-center py-4 bg-gray-50 rounded border border-dashed border-gray-200">
-                      Click 'Manage Questions' to view, add, or edit the questions for this assessment.
-                    </div>
-                  </div>
-                )}
+                {previewSelection.data.content_type === 'QUIZ' && renderQuizQuestionsPreview(previewSelection.data)}
                 
                 {/* Dedicated Lesson Attachments & Resources Section */}
                 <div className="border-t border-gray-100 pt-4">
@@ -1298,17 +1390,57 @@ export const CourseBuilderPage: React.FC = () => {
         confirmLoading={updateLessonMutation.isPending}
       >
         <Form form={editLessonForm} layout="vertical">
-          <Form.Item name="title" label="Lesson Title" rules={[{ required: true }]}>
-            <Input placeholder="Lesson Title" />
-          </Form.Item>
-          {editingLesson?.content_type === 'ARTICLE' && (
-            <Form.Item name="articleContent" label="Article Content" rules={[{ required: true }]}>
-              <Input.TextArea rows={4} />
-            </Form.Item>
+          {editingLesson?.content_type === 'QUIZ' ? (
+            <div className="p-4 bg-purple-50 border border-purple-100 rounded-lg mb-4 text-center">
+              <HelpCircle className="w-8 h-8 text-purple-500 mx-auto mb-2" />
+              <div className="font-semibold text-purple-800 mb-3">Quiz Assessment Configuration</div>
+              <Button type="primary" onClick={() => {
+                setEditLessonModalOpen(false);
+                setManagingQuizContext(editingLesson);
+                setQuizQuestionsModalOpen(true);
+              }}>
+                📝 Manage Quiz Questions (MCQ)
+              </Button>
+            </div>
+          ) : (
+            <>
+              <Form.Item name="title" label="Lesson Title" rules={[{ required: true }]}>
+                <Input placeholder="Lesson Title" />
+              </Form.Item>
+              {editingLesson?.content_type === 'ARTICLE' && (
+                <Form.Item name="articleContent" label="Article Content" rules={[{ required: true }]}>
+                  <Input.TextArea rows={4} />
+                </Form.Item>
+              )}
+              {editingLesson?.content_type === 'VIDEO' && (
+                <Form.Item name="videoDurationSeconds" label="Estimated Duration (seconds)">
+                  <InputNumber min={10} max={10800} className="w-full" />
+                </Form.Item>
+              )}
+            </>
           )}
-          <Form.Item name="videoDurationSeconds" label="Estimated Duration (seconds)">
-            <InputNumber min={10} max={10800} className="w-full" />
-          </Form.Item>
+
+          {editingLesson?.content_type !== 'QUIZ' && (
+            <div className="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-lg flex flex-col gap-2">
+              <div className="text-xs font-semibold text-gray-700">
+                Module Knowledge Check: Every module includes a 3-question assessment.
+              </div>
+              <Button size="small" type="dashed" onClick={() => {
+                const section = course?.sections?.find((s: any) => s.id === editingLesson.section_id);
+                const quizLesson = section?.lessons?.find((l: any) => l.content_type === 'QUIZ');
+                if (quizLesson) {
+                  setEditLessonModalOpen(false);
+                  setManagingQuizContext(quizLesson);
+                  setQuizQuestionsModalOpen(true);
+                } else if (section) {
+                  ensureModuleQuizMutation.mutate(section.id);
+                  setEditLessonModalOpen(false);
+                }
+              }}>
+                Manage Module Quiz Questions (3 Qs)
+              </Button>
+            </div>
+          )}
         </Form>
       </Modal>
 

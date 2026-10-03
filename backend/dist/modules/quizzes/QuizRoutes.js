@@ -28,4 +28,6 @@ router.post('/DeleteQuizAttachment/:quizId', (0, AuthorizePermission_1.Authorize
 router.delete('/DeleteQuizAttachment/:quizId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'), (req, res, next) => QuizController_1.quizController.DeleteQuizAttachment(req, res, next));
 router.post('/SubmitQuizAttempt', (req, res, next) => QuizController_1.quizController.SubmitQuizAttempt(req, res, next));
 router.get('/GetStudentQuizAttempts/:quizId', (req, res, next) => QuizController_1.quizController.GetStudentQuizAttempts(req, res, next));
+router.post('/EnsureModuleQuiz/:sectionId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'), (req, res, next) => QuizController_1.quizController.EnsureModuleQuiz(req, res, next));
+router.post('/EnsureFinalCourseQuiz/:courseId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'), (req, res, next) => QuizController_1.quizController.EnsureFinalCourseQuiz(req, res, next));
 exports.QuizRoutes = router;
