@@ -22,7 +22,7 @@ router.get('/GenerateVideoPlaybackUrl/:lessonId', (req, res, next) => VideoContr
 router.get('/GetTranscodingStatus/:lessonId', (req, res, next) => VideoController_1.videoController.GetTranscodingStatus(req, res, next));
 router.post('/RetryTranscoding/:lessonId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'), (req, res, next) => VideoController_1.videoController.RetryTranscoding(req, res, next));
 // Video Upload (Staff only)
-router.post('/UploadCourseVideo/:lessonId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'), upload.single('video'), (req, res, next) => VideoController_1.videoController.UploadCourseVideo(req, res, next));
+router.post('/UploadCourseVideo/:lessonId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'), upload.any(), (req, res, next) => VideoController_1.videoController.UploadCourseVideo(req, res, next));
 // Interactive Video Questions
 router.get('/GetVideoInteractiveQuestionList/:lessonId', (req, res, next) => VideoController_1.videoController.GetVideoInteractiveQuestionList(req, res, next));
 router.post('/CreateVideoInteractiveQuestion', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'), (req, res, next) => VideoController_1.videoController.CreateVideoInteractiveQuestion(req, res, next));

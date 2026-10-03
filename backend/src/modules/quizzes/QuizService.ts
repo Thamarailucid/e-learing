@@ -1,9 +1,11 @@
 import { executeQuery } from '../../database/connection';
 import { EnvironmentConfig } from '../../config/environment';
 import { ApiError } from '../../utils/ApiError';
+import { FileStorageFactory } from '../../services/storage/FileStorageFactory';
 
 export class QuizService {
   private schema = EnvironmentConfig.database.schema;
+  private storage = FileStorageFactory.getInstance();
 
   async GetQuizList(organizationId: string, courseId: string) {
     const res = await executeQuery(
@@ -132,6 +134,76 @@ export class QuizService {
       totalQuestions,
       passingScorePercentage: fullQuiz.passing_score_percentage,
     };
+  }
+
+  async UploadQuizAttachment(organizationId: string, quizId: string, file: Express.Multer.File) {
+    const uploadResult = await this.storage.UploadFile({
+      organizationId,
+      category: 'documents',
+      fileName: file.originalname,
+      mimeType: file.mimetype,
+      buffer: file.buffer,
+    });
+
+    const quizRes = await executeQuery(
+      `SELECT attachments FROM ${this.schema}.quizzes WHERE id = $1 AND organization_id = $2`,
+      [quizId, organizationId]
+    );
+    if (quizRes.rowCount === 0) throw ApiError.notFound('Quiz not found.');
+
+    const existingAttachments = quizRes.rows[0].attachments || [];
+    const newAttachment = {
+      id: `att_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      storageKey: uploadResult.storageKey,
+      url: uploadResult.url,
+      name: file.originalname,
+      size: uploadResult.fileSize,
+      mimeType: file.mimetype,
+      uploadedAt: new Date().toISOString()
+    };
+    const updatedAttachments = [...existingAttachments, newAttachment];
+
+    await executeQuery(
+      `UPDATE ${this.schema}.quizzes 
+       SET attachments = $1::jsonb, 
+           document_url = COALESCE(document_url, $2)
+       WHERE id = $3 AND organization_id = $4`,
+      [JSON.stringify(updatedAttachments), uploadResult.url, quizId, organizationId]
+    );
+
+    return { attachment: newAttachment, attachments: updatedAttachments };
+  }
+
+  async DeleteQuizAttachment(organizationId: string, quizId: string, attachmentUrl: string) {
+    const quizRes = await executeQuery(
+      `SELECT attachments FROM ${this.schema}.quizzes WHERE id = $1 AND organization_id = $2`,
+      [quizId, organizationId]
+    );
+    if (quizRes.rowCount === 0) throw ApiError.notFound('Quiz not found.');
+
+    const existingAttachments: any[] = quizRes.rows[0].attachments || [];
+    const target = existingAttachments.find(
+      (att: any) => att.url === attachmentUrl || att.storageKey === attachmentUrl || att.id === attachmentUrl || att.name === attachmentUrl
+    );
+
+    if (target?.storageKey) {
+      await this.storage.DeleteFile(target.storageKey).catch(console.error);
+    }
+
+    const updatedAttachments = existingAttachments.filter(
+      (att: any) => att.url !== attachmentUrl && att.storageKey !== attachmentUrl && att.id !== attachmentUrl && att.name !== attachmentUrl
+    );
+    const newDocUrl = updatedAttachments.length > 0 ? (updatedAttachments[0].url || updatedAttachments[0].file_url) : null;
+
+    await executeQuery(
+      `UPDATE ${this.schema}.quizzes 
+       SET attachments = $1::jsonb, 
+           document_url = $2
+       WHERE id = $3 AND organization_id = $4`,
+      [JSON.stringify(updatedAttachments), newDocUrl, quizId, organizationId]
+    );
+
+    return { success: true, attachments: updatedAttachments };
   }
 }
 

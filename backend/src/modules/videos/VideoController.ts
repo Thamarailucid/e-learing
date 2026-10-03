@@ -26,9 +26,10 @@ export class VideoController {
     try {
       const orgId = req.organizationId!;
       const { lessonId } = req.params;
-      if (!req.file) throw ApiError.badRequest('No video file provided for upload.');
+      const file = req.file || (req.files && Array.isArray(req.files) ? req.files[0] : (req.files as any)?.video?.[0] || (req.files as any)?.file?.[0]);
+      if (!file) throw ApiError.badRequest('No video file provided for upload.');
 
-      const result = await videoService.UploadCourseVideo(orgId, lessonId, req.file);
+      const result = await videoService.UploadCourseVideo(orgId, lessonId, file);
       res.status(201).json(ApiResponse.success('Course video uploaded successfully.', result));
     } catch (err) {
       next(err);

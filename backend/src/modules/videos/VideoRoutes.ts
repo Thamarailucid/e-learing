@@ -35,7 +35,7 @@ router.post(
 router.post(
   '/UploadCourseVideo/:lessonId',
   AuthorizeRoles('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'),
-  upload.single('video'),
+  upload.any(),
   (req, res, next) => videoController.UploadCourseVideo(req, res, next)
 );
 

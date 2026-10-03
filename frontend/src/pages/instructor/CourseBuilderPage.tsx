@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, Button, Modal, Form, Input, Select, InputNumber, message, Tag, Upload, Tooltip, Radio, Popconfirm } from 'antd';
-import { Plus, Video, FileText, HelpCircle, Check, ArrowLeft, UploadCloud, Clock, Image as ImageIcon, CheckCircle, Sparkles, Trash2, Paperclip, Download } from 'lucide-react';
+import { Plus, Video, FileText, HelpCircle, Check, ArrowLeft, UploadCloud, Clock, Image as ImageIcon, CheckCircle, Sparkles, Trash2, Paperclip, Download, Star } from 'lucide-react';
 import { ApiClient } from '../../services/api/ApiClient';
 import { RbaPageHeader } from '../../components/common/RbaPageHeader';
 import { RbaStatusBadge } from '../../components/common/RbaStatusBadge';
@@ -31,8 +31,30 @@ export const CourseBuilderPage: React.FC = () => {
 
   // Local file & video source state for Add Lesson Modal
   const [selectedLessonFile, setSelectedLessonFile] = useState<File | null>(null);
+  const [selectedAttachmentFile, setSelectedAttachmentFile] = useState<File | null>(null);
   const [videoSourceType, setVideoSourceType] = useState<'upload' | 'url'>('upload');
-  const [lessonContentType, setLessonContentType] = useState<'VIDEO' | 'ARTICLE'>('VIDEO');
+  const [lessonContentType, setLessonContentType] = useState<'VIDEO' | 'ARTICLE' | 'QUIZ' | 'REFERENCE' | 'WELCOME'>('VIDEO');
+
+  const handleDeleteLessonAttachment = async (lessonId: string, attachmentUrl: string) => {
+    try {
+      await ApiClient.post(`/courses/DeleteLessonAttachment/${lessonId}`, { attachmentUrl });
+      message.success('Attachment deleted successfully!');
+      queryClient.invalidateQueries({ queryKey: ['course-details', courseId] });
+    } catch (err: any) {
+      message.error(err.response?.data?.message || 'Failed to delete attachment.');
+    }
+  };
+
+  const getLessonIcon = (type?: string, title?: string) => {
+    const t = (type || '').toUpperCase();
+    const tit = (title || '').toLowerCase();
+    if (t === 'WELCOME' || tit.includes('welcome') || tit.includes('orientation')) return <Sparkles className="w-3.5 h-3.5 text-amber-500" />;
+    if (t === 'QUIZ' || tit.includes('quiz')) return <HelpCircle className="w-3.5 h-3.5 text-purple-500" />;
+    if (t === 'FEEDBACK' || tit.includes('feedback')) return <Star className="w-3.5 h-3.5 text-yellow-500" />;
+    if (t === 'REFERENCE' || tit.includes('reference') || tit.includes('cheatsheet')) return <Paperclip className="w-3.5 h-3.5 text-blue-500" />;
+    if (t === 'ARTICLE' || tit.includes('reading') || tit.includes('article')) return <FileText className="w-3.5 h-3.5 text-emerald-500" />;
+    return <Video className="w-3.5 h-3.5 text-indigo-500" />;
+  };
 
   // 1. Fetch Course Data
   const { data: course, isLoading } = useQuery({
@@ -96,14 +118,35 @@ export const CourseBuilderPage: React.FC = () => {
         await handleUploadLessonVideo(createdLesson.id, selectedLessonFile);
       }
 
+      // If an attachment file was selected in the modal, upload directly to S3!
+      if (createdLesson?.id && selectedAttachmentFile) {
+        const formData = new FormData();
+        formData.append('file', selectedAttachmentFile);
+        formData.append('attachment', selectedAttachmentFile);
+        try {
+          await ApiClient.post(`/courses/UploadLessonAttachment/${createdLesson.id}`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+        } catch (e) {
+          console.error('Failed to upload initial attachment:', e);
+        }
+      }
+
       return createdLesson;
     },
     onSuccess: () => {
-      message.success(selectedLessonFile ? 'Lesson created and video uploaded to S3!' : 'Lesson added.');
+      message.success(
+        selectedLessonFile
+          ? 'Lesson created and video uploaded to S3!'
+          : selectedAttachmentFile
+          ? 'Lesson created and attachment uploaded to S3!'
+          : 'Lesson added.'
+      );
       queryClient.invalidateQueries({ queryKey: ['course-details', courseId] });
       setLessonModalOpen(false);
       lessonForm.resetFields();
       setSelectedLessonFile(null);
+      setSelectedAttachmentFile(null);
       setVideoSourceType('upload');
       setLessonContentType('VIDEO');
     },
@@ -398,7 +441,7 @@ export const CourseBuilderPage: React.FC = () => {
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-7 h-7 rounded bg-white flex items-center justify-center text-gray-600 shadow-2xs">
-                          {lesson.content_type === 'VIDEO' ? <Video className="w-3.5 h-3.5" /> : <FileText className="w-3.5 h-3.5" />}
+                          {getLessonIcon(lesson.content_type, lesson.title)}
                         </div>
                         <div>
                           <div className="text-xs font-semibold text-gray-900 flex items-center gap-2">
@@ -444,16 +487,54 @@ export const CourseBuilderPage: React.FC = () => {
                             )}
                           </div>
                           <div className="text-[11px] text-gray-500">
-                            {lesson.content_type} • {lesson.video_duration_seconds ? `${Math.floor(lesson.video_duration_seconds / 60)} mins` : 'Article'}
+                            {lesson.content_type} • {lesson.video_duration_seconds ? `${Math.floor(lesson.video_duration_seconds / 60)} mins` : 'Article / Resource'}
                           </div>
                           {lesson.attachments && lesson.attachments.length > 0 && (
-                            <div className="mt-1 flex flex-col gap-1">
-                              {lesson.attachments.map((att: any) => (
-                                <div key={att.id} className="text-[10px] flex items-center gap-1 text-gray-600 bg-gray-100 p-1 rounded w-max">
-                                  <Paperclip className="w-3 h-3" />
-                                  <a href={att.file_url} target="_blank" rel="noreferrer" className="hover:underline">{att.file_name}</a>
-                                </div>
-                              ))}
+                            <div className="mt-1.5 flex flex-wrap gap-1.5">
+                              {lesson.attachments.map((att: any, idx: number) => {
+                                const fileName = att.name || att.file_name || 'Attachment';
+                                const fileUrl = att.url || att.file_url || '#';
+                                return (
+                                  <div
+                                    key={att.id || att.url || idx}
+                                    className="text-[10px] inline-flex items-center gap-1.5 text-gray-700 bg-white hover:bg-gray-100 px-2 py-0.5 rounded border border-gray-200 shadow-2xs"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <Paperclip className="w-3 h-3 text-emerald-600 shrink-0" />
+                                    <a
+                                      href={fileUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="hover:underline font-medium truncate max-w-[140px]"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      {fileName}
+                                    </a>
+                                    {att.size && <span className="text-gray-400">({(att.size / 1024).toFixed(0)} KB)</span>}
+                                    <Popconfirm
+                                      title="Delete Attachment?"
+                                      description="Are you sure you want to remove this attachment from the lesson?"
+                                      onConfirm={async (e) => {
+                                        e?.stopPropagation();
+                                        await handleDeleteLessonAttachment(lesson.id, fileUrl);
+                                      }}
+                                      onCancel={(e) => e?.stopPropagation()}
+                                      okText="Yes, Delete"
+                                      cancelText="Cancel"
+                                      okButtonProps={{ danger: true }}
+                                    >
+                                      <button
+                                        type="button"
+                                        className="p-0.5 text-gray-400 hover:text-red-600 rounded transition-colors ml-0.5"
+                                        onClick={(e) => e.stopPropagation()}
+                                        title="Delete attachment"
+                                      >
+                                        <Trash2 className="w-2.5 h-2.5" />
+                                      </button>
+                                    </Popconfirm>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -464,18 +545,19 @@ export const CourseBuilderPage: React.FC = () => {
                         <div onClick={(e) => e.stopPropagation()}>
                           <Upload
                             showUploadList={false}
-                            accept=".pdf,.docx,.zip,.txt,.js,.py,.html,.css"
+                            accept=".pdf,.docx,.zip,.txt,.js,.py,.html,.css,.md,.csv,.xlsx,.json"
                             beforeUpload={async (file) => {
                               const formData = new FormData();
+                              formData.append('file', file);
                               formData.append('attachment', file);
                               try {
                                 await ApiClient.post(`/courses/UploadLessonAttachment/${lesson.id}`, formData, {
                                   headers: { 'Content-Type': 'multipart/form-data' },
                                 });
-                                message.success('Attachment uploaded successfully!');
+                                message.success(`Attachment "${file.name}" uploaded successfully to S3!`);
                                 queryClient.invalidateQueries({ queryKey: ['course-details', courseId] });
-                              } catch (err) {
-                                message.error('Failed to upload attachment.');
+                              } catch (err: any) {
+                                message.error(err.response?.data?.message || 'Failed to upload attachment.');
                               }
                               return false;
                             }}
@@ -594,6 +676,7 @@ export const CourseBuilderPage: React.FC = () => {
         onCancel={() => {
           setLessonModalOpen(false);
           setSelectedLessonFile(null);
+          setSelectedAttachmentFile(null);
           setVideoSourceType('upload');
           setLessonContentType('VIDEO');
           lessonForm.resetFields();
@@ -603,7 +686,7 @@ export const CourseBuilderPage: React.FC = () => {
         okText={
           addLessonMutation.isPending && uploadProgress !== null
             ? `Uploading to S3... ${uploadProgress}%`
-            : selectedLessonFile
+            : selectedLessonFile || selectedAttachmentFile
             ? 'Create & Upload to S3'
             : 'Add Lesson'
         }
@@ -634,6 +717,9 @@ export const CourseBuilderPage: React.FC = () => {
             <Select>
               <Select.Option value="VIDEO">Video Lecture (MP4 / WebM)</Select.Option>
               <Select.Option value="ARTICLE">Article / Text Note</Select.Option>
+              <Select.Option value="QUIZ">Quiz / Assessment</Select.Option>
+              <Select.Option value="REFERENCE">Reference Materials & Cheatsheets</Select.Option>
+              <Select.Option value="WELCOME">Welcome & Orientation</Select.Option>
             </Select>
           </Form.Item>
 
@@ -731,6 +817,51 @@ export const CourseBuilderPage: React.FC = () => {
             >
               <Input.TextArea rows={4} placeholder="Type notes or reading instructions for students..." />
             </Form.Item>
+          )}
+
+          {lessonContentType !== 'VIDEO' && (
+            <div className="mb-4 p-3.5 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
+              <div className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
+                <Paperclip className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Downloadable Reference Material / Document (Optional)</span>
+              </div>
+              <p className="text-[11px] text-gray-500">
+                Attach reference files, notes, cheatsheets, or exercise files for this lesson (PDF, DOCX, ZIP, TXT, etc.). Uploads directly to S3!
+              </p>
+              <Upload
+                accept=".pdf,.docx,.zip,.txt,.js,.py,.html,.css,.md,.csv,.xlsx,.json"
+                showUploadList={false}
+                beforeUpload={(file) => {
+                  setSelectedAttachmentFile(file);
+                  return false;
+                }}
+              >
+                {selectedAttachmentFile ? (
+                  <div className="flex items-center justify-between p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs">
+                    <div className="flex items-center gap-2 truncate">
+                      <Paperclip className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span className="font-semibold text-emerald-800 truncate">{selectedAttachmentFile.name}</span>
+                      <span className="text-gray-500">({(selectedAttachmentFile.size / 1024).toFixed(0)} KB)</span>
+                    </div>
+                    <Button
+                      type="text"
+                      size="small"
+                      danger
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedAttachmentFile(null);
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ) : (
+                  <Button size="small" icon={<UploadCloud className="w-3.5 h-3.5 text-indigo-500" />}>
+                    Select File to Attach (.pdf, .docx, .zip, etc.)
+                  </Button>
+                )}
+              </Upload>
+            </div>
           )}
 
           <Form.Item name="videoDurationSeconds" label="Estimated Duration (seconds)">

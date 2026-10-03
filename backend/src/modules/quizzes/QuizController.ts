@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { quizService } from './QuizService';
 import { ApiResponse } from '../../utils/ApiResponse';
+import { ApiError } from '../../utils/ApiError';
 
 const CreateQuizSchema = z.object({
   courseId: z.string().uuid(),
@@ -71,6 +72,32 @@ export class QuizController {
       const parsed = SubmitQuizSchema.parse(req.body);
       const result = await quizService.SubmitQuizAttempt(orgId, req.user!.userId, parsed.quizId, parsed.answers);
       res.json(ApiResponse.success('Quiz submitted and scored successfully.', result));
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async UploadQuizAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const orgId = req.organizationId!;
+      const { quizId } = req.params;
+      const file = req.file || (req.files && Array.isArray(req.files) ? req.files[0] : (req.files as any)?.file?.[0] || (req.files as any)?.attachment?.[0]);
+      if (!file) throw ApiError.badRequest('No file provided.');
+      const result = await quizService.UploadQuizAttachment(orgId, quizId, file);
+      res.json(ApiResponse.success('Quiz attachment uploaded successfully.', result));
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async DeleteQuizAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const orgId = req.organizationId!;
+      const { quizId } = req.params;
+      const attachmentUrl = req.body?.attachmentUrl || req.body?.url || (req.query?.url as string);
+      if (!attachmentUrl) throw ApiError.badRequest('Attachment URL is required.');
+      const result = await quizService.DeleteQuizAttachment(orgId, quizId, attachmentUrl);
+      res.json(ApiResponse.success('Quiz attachment deleted successfully.', result));
     } catch (err) {
       next(err);
     }

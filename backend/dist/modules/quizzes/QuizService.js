@@ -4,8 +4,10 @@ exports.quizService = exports.QuizService = void 0;
 const connection_1 = require("../../database/connection");
 const environment_1 = require("../../config/environment");
 const ApiError_1 = require("../../utils/ApiError");
+const FileStorageFactory_1 = require("../../services/storage/FileStorageFactory");
 class QuizService {
     schema = environment_1.EnvironmentConfig.database.schema;
+    storage = FileStorageFactory_1.FileStorageFactory.getInstance();
     async GetQuizList(organizationId, courseId) {
         const res = await (0, connection_1.executeQuery)(`SELECT q.id, q.title, q.description, q.passing_score_percentage, q.time_limit_minutes, q.max_attempts,
               (SELECT COUNT(*) FROM ${this.schema}.quiz_questions qq WHERE qq.quiz_id = q.id) as question_count
@@ -88,6 +90,51 @@ class QuizService {
             totalQuestions,
             passingScorePercentage: fullQuiz.passing_score_percentage,
         };
+    }
+    async UploadQuizAttachment(organizationId, quizId, file) {
+        const uploadResult = await this.storage.UploadFile({
+            organizationId,
+            category: 'documents',
+            fileName: file.originalname,
+            mimeType: file.mimetype,
+            buffer: file.buffer,
+        });
+        const quizRes = await (0, connection_1.executeQuery)(`SELECT attachments FROM ${this.schema}.quizzes WHERE id = $1 AND organization_id = $2`, [quizId, organizationId]);
+        if (quizRes.rowCount === 0)
+            throw ApiError_1.ApiError.notFound('Quiz not found.');
+        const existingAttachments = quizRes.rows[0].attachments || [];
+        const newAttachment = {
+            id: `att_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            storageKey: uploadResult.storageKey,
+            url: uploadResult.url,
+            name: file.originalname,
+            size: uploadResult.fileSize,
+            mimeType: file.mimetype,
+            uploadedAt: new Date().toISOString()
+        };
+        const updatedAttachments = [...existingAttachments, newAttachment];
+        await (0, connection_1.executeQuery)(`UPDATE ${this.schema}.quizzes 
+       SET attachments = $1::jsonb, 
+           document_url = COALESCE(document_url, $2)
+       WHERE id = $3 AND organization_id = $4`, [JSON.stringify(updatedAttachments), uploadResult.url, quizId, organizationId]);
+        return { attachment: newAttachment, attachments: updatedAttachments };
+    }
+    async DeleteQuizAttachment(organizationId, quizId, attachmentUrl) {
+        const quizRes = await (0, connection_1.executeQuery)(`SELECT attachments FROM ${this.schema}.quizzes WHERE id = $1 AND organization_id = $2`, [quizId, organizationId]);
+        if (quizRes.rowCount === 0)
+            throw ApiError_1.ApiError.notFound('Quiz not found.');
+        const existingAttachments = quizRes.rows[0].attachments || [];
+        const target = existingAttachments.find((att) => att.url === attachmentUrl || att.storageKey === attachmentUrl || att.id === attachmentUrl || att.name === attachmentUrl);
+        if (target?.storageKey) {
+            await this.storage.DeleteFile(target.storageKey).catch(console.error);
+        }
+        const updatedAttachments = existingAttachments.filter((att) => att.url !== attachmentUrl && att.storageKey !== attachmentUrl && att.id !== attachmentUrl && att.name !== attachmentUrl);
+        const newDocUrl = updatedAttachments.length > 0 ? (updatedAttachments[0].url || updatedAttachments[0].file_url) : null;
+        await (0, connection_1.executeQuery)(`UPDATE ${this.schema}.quizzes 
+       SET attachments = $1::jsonb, 
+           document_url = $2
+       WHERE id = $3 AND organization_id = $4`, [JSON.stringify(updatedAttachments), newDocUrl, quizId, organizationId]);
+        return { success: true, attachments: updatedAttachments };
     }
 }
 exports.QuizService = QuizService;

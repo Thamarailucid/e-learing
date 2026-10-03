@@ -36,8 +36,9 @@ const uploadDoc = (0, multer_1.default)({
     limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
 });
 router.delete('/DeleteCourseSection/:sectionId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR', 'CONTENT_MANAGER'), (req, res, next) => CourseController_1.courseController.DeleteCourseSection(req, res, next));
-router.delete('/DeleteLesson/:lessonId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR', 'CONTENT_MANAGER'), (req, res, next) => CourseController_1.courseController.DeleteLesson(req, res, next));
-router.post('/UploadLessonAttachment/:lessonId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'), uploadDoc.single('file'), (req, res, next) => CourseController_1.courseController.UploadLessonAttachment(req, res, next));
+router.post('/UploadLessonAttachment/:lessonId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'), uploadDoc.any(), (req, res, next) => CourseController_1.courseController.UploadLessonAttachment(req, res, next));
+router.post('/DeleteLessonAttachment/:lessonId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'), (req, res, next) => CourseController_1.courseController.DeleteLessonAttachment(req, res, next));
+router.delete('/DeleteLessonAttachment/:lessonId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'), (req, res, next) => CourseController_1.courseController.DeleteLessonAttachment(req, res, next));
 router.post('/ScaffoldCourseraFlow/:courseId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'), (req, res, next) => CourseController_1.courseController.ScaffoldCourseraFlow(req, res, next));
 router.post('/SubmitCourseFeedback', (req, res, next) => CourseController_1.courseController.SubmitCourseFeedback(req, res, next));
 router.get('/GetCourseFeedback/:courseId', (req, res, next) => CourseController_1.courseController.GetCourseFeedback(req, res, next));

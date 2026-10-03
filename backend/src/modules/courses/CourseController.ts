@@ -239,9 +239,23 @@ export class CourseController {
     try {
       const orgId = req.organizationId!;
       const { lessonId } = req.params;
-      if (!req.file) throw ApiError.badRequest('No file provided.');
-      const result = await courseService.UploadLessonAttachment(orgId, lessonId, req.file);
+      const file = req.file || (req.files && Array.isArray(req.files) ? req.files[0] : (req.files as any)?.file?.[0] || (req.files as any)?.attachment?.[0]);
+      if (!file) throw ApiError.badRequest('No file provided.');
+      const result = await courseService.UploadLessonAttachment(orgId, lessonId, file);
       res.json(ApiResponse.success('Attachment uploaded successfully.', result));
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async DeleteLessonAttachment(req: Request, res: Response, next: NextFunction) {
+    try {
+      const orgId = req.organizationId!;
+      const { lessonId } = req.params;
+      const attachmentUrl = req.body?.attachmentUrl || req.body?.url || (req.query?.url as string);
+      if (!attachmentUrl) throw ApiError.badRequest('Attachment URL is required.');
+      const result = await courseService.DeleteLessonAttachment(orgId, lessonId, attachmentUrl);
+      res.json(ApiResponse.success('Attachment deleted successfully.', result));
     } catch (err) {
       next(err);
     }

@@ -578,6 +578,10 @@ async function InitializeDatabase() {
     ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS hls_variants JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS source_video_key TEXT;
 
+    -- Quiz columns
+    ALTER TABLE ${schema}.quizzes ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE ${schema}.quizzes ADD COLUMN IF NOT EXISTS document_url TEXT;
+
     -- Video Interactive Questions columns
     ALTER TABLE ${schema}.video_interactive_questions ADD COLUMN IF NOT EXISTS explanation TEXT;
     ALTER TABLE ${schema}.video_interactive_questions ADD COLUMN IF NOT EXISTS is_required BOOLEAN DEFAULT TRUE;

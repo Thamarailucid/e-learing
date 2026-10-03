@@ -599,6 +599,8 @@ export class CourseService {
 
     const existingAttachments = lessonRes.rows[0].attachments || [];
     const newAttachment = {
+      id: `att_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      storageKey: uploadResult.storageKey,
       url: uploadResult.url,
       name: file.originalname,
       size: uploadResult.fileSize,
@@ -616,6 +618,38 @@ export class CourseService {
     );
 
     return { attachment: newAttachment, attachments: updatedAttachments };
+  }
+
+  async DeleteLessonAttachment(organizationId: string, lessonId: string, attachmentUrl: string) {
+    const lessonRes = await executeQuery(
+      `SELECT attachments FROM ${this.schema}.lessons WHERE id = $1 AND organization_id = $2`,
+      [lessonId, organizationId]
+    );
+    if (lessonRes.rowCount === 0) throw ApiError.notFound('Lesson not found.');
+
+    const existingAttachments: any[] = lessonRes.rows[0].attachments || [];
+    const target = existingAttachments.find(
+      (att: any) => att.url === attachmentUrl || att.storageKey === attachmentUrl || att.id === attachmentUrl || att.name === attachmentUrl
+    );
+
+    if (target?.storageKey) {
+      await this.storage.DeleteFile(target.storageKey).catch(console.error);
+    }
+
+    const updatedAttachments = existingAttachments.filter(
+      (att: any) => att.url !== attachmentUrl && att.storageKey !== attachmentUrl && att.id !== attachmentUrl && att.name !== attachmentUrl
+    );
+    const newDocUrl = updatedAttachments.length > 0 ? (updatedAttachments[0].url || updatedAttachments[0].file_url) : null;
+
+    await executeQuery(
+      `UPDATE ${this.schema}.lessons 
+       SET attachments = $1::jsonb, 
+           document_url = $2
+       WHERE id = $3 AND organization_id = $4`,
+      [JSON.stringify(updatedAttachments), newDocUrl, lessonId, organizationId]
+    );
+
+    return { success: true, attachments: updatedAttachments };
   }
 
   async ScaffoldCourseraFlow(organizationId: string, courseId: string) {

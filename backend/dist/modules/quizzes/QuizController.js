@@ -4,6 +4,7 @@ exports.quizController = exports.QuizController = void 0;
 const zod_1 = require("zod");
 const QuizService_1 = require("./QuizService");
 const ApiResponse_1 = require("../../utils/ApiResponse");
+const ApiError_1 = require("../../utils/ApiError");
 const CreateQuizSchema = zod_1.z.object({
     courseId: zod_1.z.string().uuid(),
     sectionId: zod_1.z.string().uuid().optional(),
@@ -68,6 +69,34 @@ class QuizController {
             const parsed = SubmitQuizSchema.parse(req.body);
             const result = await QuizService_1.quizService.SubmitQuizAttempt(orgId, req.user.userId, parsed.quizId, parsed.answers);
             res.json(ApiResponse_1.ApiResponse.success('Quiz submitted and scored successfully.', result));
+        }
+        catch (err) {
+            next(err);
+        }
+    }
+    async UploadQuizAttachment(req, res, next) {
+        try {
+            const orgId = req.organizationId;
+            const { quizId } = req.params;
+            const file = req.file || (req.files && Array.isArray(req.files) ? req.files[0] : req.files?.file?.[0] || req.files?.attachment?.[0]);
+            if (!file)
+                throw ApiError_1.ApiError.badRequest('No file provided.');
+            const result = await QuizService_1.quizService.UploadQuizAttachment(orgId, quizId, file);
+            res.json(ApiResponse_1.ApiResponse.success('Quiz attachment uploaded successfully.', result));
+        }
+        catch (err) {
+            next(err);
+        }
+    }
+    async DeleteQuizAttachment(req, res, next) {
+        try {
+            const orgId = req.organizationId;
+            const { quizId } = req.params;
+            const attachmentUrl = req.body?.attachmentUrl || req.body?.url || req.query?.url;
+            if (!attachmentUrl)
+                throw ApiError_1.ApiError.badRequest('Attachment URL is required.');
+            const result = await QuizService_1.quizService.DeleteQuizAttachment(orgId, quizId, attachmentUrl);
+            res.json(ApiResponse_1.ApiResponse.success('Quiz attachment deleted successfully.', result));
         }
         catch (err) {
             next(err);

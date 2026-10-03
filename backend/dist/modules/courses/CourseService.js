@@ -392,6 +392,8 @@ class CourseService {
             throw ApiError_1.ApiError.notFound('Lesson not found.');
         const existingAttachments = lessonRes.rows[0].attachments || [];
         const newAttachment = {
+            id: `att_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            storageKey: uploadResult.storageKey,
             url: uploadResult.url,
             name: file.originalname,
             size: uploadResult.fileSize,
@@ -404,6 +406,23 @@ class CourseService {
            document_url = COALESCE(document_url, $2)
        WHERE id = $3 AND organization_id = $4`, [JSON.stringify(updatedAttachments), uploadResult.url, lessonId, organizationId]);
         return { attachment: newAttachment, attachments: updatedAttachments };
+    }
+    async DeleteLessonAttachment(organizationId, lessonId, attachmentUrl) {
+        const lessonRes = await (0, connection_1.executeQuery)(`SELECT attachments FROM ${this.schema}.lessons WHERE id = $1 AND organization_id = $2`, [lessonId, organizationId]);
+        if (lessonRes.rowCount === 0)
+            throw ApiError_1.ApiError.notFound('Lesson not found.');
+        const existingAttachments = lessonRes.rows[0].attachments || [];
+        const target = existingAttachments.find((att) => att.url === attachmentUrl || att.storageKey === attachmentUrl || att.id === attachmentUrl || att.name === attachmentUrl);
+        if (target?.storageKey) {
+            await this.storage.DeleteFile(target.storageKey).catch(console.error);
+        }
+        const updatedAttachments = existingAttachments.filter((att) => att.url !== attachmentUrl && att.storageKey !== attachmentUrl && att.id !== attachmentUrl && att.name !== attachmentUrl);
+        const newDocUrl = updatedAttachments.length > 0 ? (updatedAttachments[0].url || updatedAttachments[0].file_url) : null;
+        await (0, connection_1.executeQuery)(`UPDATE ${this.schema}.lessons 
+       SET attachments = $1::jsonb, 
+           document_url = $2
+       WHERE id = $3 AND organization_id = $4`, [JSON.stringify(updatedAttachments), newDocUrl, lessonId, organizationId]);
+        return { success: true, attachments: updatedAttachments };
     }
     async ScaffoldCourseraFlow(organizationId, courseId) {
         const modules = [
