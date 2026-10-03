@@ -20,6 +20,11 @@ import {
   Download,
   BookOpen,
   Send,
+  ChevronLeft,
+  ChevronRight,
+  Sparkles,
+  HelpCircle,
+  Paperclip,
 } from 'lucide-react';
 import { ApiClient } from '../../services/api/ApiClient';
 import { SecureStorageService } from '../../services/storage/SecureStorageService';
@@ -139,30 +144,49 @@ export const LearningPlayerPage: React.FC = () => {
     refetchInterval: false,
   });
 
+  // Flatten curriculum lessons for sequential navigation
+  const flatLessons = useMemo(() => {
+    if (!course?.sections) return [];
+    const list: any[] = [];
+    course.sections.forEach((sec: any) => {
+      if (sec.lessons) list.push(...sec.lessons);
+    });
+    return list;
+  }, [course]);
+
+  const currentLessonIndex = useMemo(() => {
+    if (!activeLesson || flatLessons.length === 0) return -1;
+    return flatLessons.findIndex((l: any) => l.id === activeLesson.id);
+  }, [activeLesson, flatLessons]);
+
+  const nextLesson = useMemo(() => {
+    if (currentLessonIndex === -1 || currentLessonIndex >= flatLessons.length - 1) return null;
+    return flatLessons[currentLessonIndex + 1];
+  }, [currentLessonIndex, flatLessons]);
+
+  const prevLesson = useMemo(() => {
+    if (currentLessonIndex <= 0) return null;
+    return flatLessons[currentLessonIndex - 1];
+  }, [currentLessonIndex, flatLessons]);
+
   // Set initial active lesson dynamically based on URL query param, saved last active lesson, or first uncompleted lesson
   useEffect(() => {
-    if (course?.sections && course.sections.length > 0 && !activeLesson) {
-      const allLessons: any[] = [];
-      course.sections.forEach((sec: any) => {
-        if (sec.lessons) allLessons.push(...sec.lessons);
-      });
-      if (allLessons.length === 0) return;
-
+    if (flatLessons.length > 0 && !activeLesson) {
       let chosenLesson: any = null;
 
       // 1. Explicit query parameter ?lesson=<id>
       if (requestedLessonId) {
-        chosenLesson = allLessons.find((l: any) => l.id === requestedLessonId);
+        chosenLesson = flatLessons.find((l: any) => l.id === requestedLessonId);
       }
 
       // 2. Last active lesson from course progress
       if (!chosenLesson && progressData?.courseProgress?.last_lesson_id) {
-        chosenLesson = allLessons.find((l: any) => l.id === progressData.courseProgress.last_lesson_id);
+        chosenLesson = flatLessons.find((l: any) => l.id === progressData.courseProgress.last_lesson_id);
       }
 
       // 3. First uncompleted lesson
       if (!chosenLesson && progressData?.lessonProgress) {
-        chosenLesson = allLessons.find((l: any) => {
+        chosenLesson = flatLessons.find((l: any) => {
           const lp = progressData.lessonProgress.find((p: any) => p.lesson_id === l.id);
           return !lp?.is_completed;
         });
@@ -170,14 +194,14 @@ export const LearningPlayerPage: React.FC = () => {
 
       // 4. Default to first lesson in curriculum
       if (!chosenLesson) {
-        chosenLesson = allLessons[0];
+        chosenLesson = flatLessons[0];
       }
 
       if (chosenLesson) {
         setActiveLesson(chosenLesson);
       }
     }
-  }, [course, activeLesson, requestedLessonId, progressData]);
+  }, [flatLessons, activeLesson, requestedLessonId, progressData]);
 
   // Synchronize active lesson state with URL search param and backend active lesson record
   useEffect(() => {
@@ -222,13 +246,21 @@ export const LearningPlayerPage: React.FC = () => {
           if (existingPct >= m) savedMilestonesRef.current.add(m);
         });
 
-        setInitialResumePosition(pos);
-        setLastSavedPosition(pos);
-        lastSavedPositionRef.current = pos;
-        setCurrentPlaySeconds(pos);
+        // Only assign resume position if active lesson is a VIDEO
+        if (activeLesson.content_type === 'VIDEO') {
+          setInitialResumePosition(pos);
+          setLastSavedPosition(pos);
+          lastSavedPositionRef.current = pos;
+          setCurrentPlaySeconds(pos);
+        } else {
+          setInitialResumePosition(0);
+          setLastSavedPosition(0);
+          lastSavedPositionRef.current = 0;
+          setCurrentPlaySeconds(0);
+        }
       }
     }
-  }, [activeLesson?.id, progressData]);
+  }, [activeLesson, progressData]);
 
   // Periodic Video Watch Progress Mutation (fire-and-forget, does NOT invalidate queries to avoid GET/POST loops)
   const saveProgressMutation = useMutation({
@@ -246,6 +278,31 @@ export const LearningPlayerPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['student-course-progress', courseId] });
     },
   });
+
+  // Automated Next-Lesson Navigation upon Lesson Completion
+  const handleCompleteAndNavigateNext = useCallback((lessonToComplete?: any) => {
+    const target = lessonToComplete || activeLesson;
+    if (!target?.id) return;
+
+    // 1. Mark target lesson as completed on server
+    completeLessonMutation.mutate({
+      lessonId: target.id,
+      lastPositionSeconds: target.video_duration_seconds || 100,
+      watchPercentage: 100,
+    });
+
+    // 2. Find next lesson in the curriculum
+    const currentIndex = flatLessons.findIndex((l: any) => l.id === target.id);
+    if (currentIndex !== -1 && currentIndex < flatLessons.length - 1) {
+      const next = flatLessons[currentIndex + 1];
+      message.success(`Completed! Next: ${next.title}`);
+      setActiveLesson(next);
+      setSearchParams({ lesson: next.id }, { replace: true });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      message.success('Congratulations! You have completed all lessons in this course!');
+    }
+  }, [activeLesson, completeLessonMutation, flatLessons, setSearchParams]);
 
   // Feedback Mutation
   const submitFeedbackMutation = useMutation({
@@ -437,6 +494,17 @@ export const LearningPlayerPage: React.FC = () => {
   const isArticleStage = activeLesson?.content_type === 'ARTICLE' || (!activeLesson?.content_type && !isWelcomeStage && !isFeedbackStage && !isReferenceStage);
   const hasAttachments = (activeLesson?.attachments && activeLesson.attachments.length > 0) || activeLesson?.document_url;
 
+  const getLessonIcon = (l: any) => {
+    const type = l.content_type?.toUpperCase();
+    const title = (l.title || '').toLowerCase();
+    if (type === 'WELCOME' || title.includes('welcome') || title.includes('orientation')) return <Sparkles className="w-3.5 h-3.5 shrink-0 text-amber-500" />;
+    if (type === 'QUIZ' || title.includes('quiz')) return <HelpCircle className="w-3.5 h-3.5 shrink-0 text-purple-500" />;
+    if (type === 'FEEDBACK' || title.includes('feedback') || title.includes('wrap-up')) return <Star className="w-3.5 h-3.5 shrink-0 text-yellow-500" />;
+    if (type === 'REFERENCE' || title.includes('reference') || title.includes('resource') || title.includes('cheatsheet')) return <Paperclip className="w-3.5 h-3.5 shrink-0 text-blue-500" />;
+    if (type === 'ARTICLE' || title.includes('reading') || title.includes('article')) return <FileText className="w-3.5 h-3.5 shrink-0 text-emerald-500" />;
+    return <PlayCircle className="w-3.5 h-3.5 shrink-0 text-indigo-500" />;
+  };
+
   if (isLoading) return <div className="p-8 text-center text-sm text-gray-500">Loading course player...</div>;
 
   return (
@@ -470,7 +538,7 @@ export const LearningPlayerPage: React.FC = () => {
 
           <div className="w-full min-w-0">
             {/* Recently Watched / Dynamic Resume Point Banner */}
-            {initialResumePosition > 5 && (
+            {activeLesson?.content_type === 'VIDEO' && initialResumePosition > 5 && (
               <div className="mb-3 p-3 bg-gradient-to-r from-amber-500/10 via-amber-400/10 to-transparent border border-amber-500/30 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-amber-950">
                 <div className="flex items-center gap-2 min-w-0">
                   <Clock className="w-4 h-4 text-amber-600 shrink-0" />
@@ -551,12 +619,7 @@ export const LearningPlayerPage: React.FC = () => {
                     }
                   }}
                   onEnded={() => {
-                    completeLessonMutation.mutate({
-                      lessonId: activeLesson.id,
-                      lastPositionSeconds: activeLesson.video_duration_seconds || 100,
-                      watchPercentage: 100,
-                    });
-                    message.success('Lesson finished! Watch progress recorded.');
+                    handleCompleteAndNavigateNext(activeLesson);
                   }}
                 />
               )) : isWelcomeStage ? (
@@ -565,11 +628,14 @@ export const LearningPlayerPage: React.FC = () => {
                   <p className="text-sm text-gray-600 mb-6 max-w-xl mx-auto">
                     We're thrilled to have you here! Get ready to expand your knowledge. Review the syllabus on the right and click below to begin your journey.
                   </p>
-                  <Button type="primary" size="large" onClick={() => {
-                      completeLessonMutation.mutate({ lessonId: activeLesson.id, lastPositionSeconds: 100, watchPercentage: 100 });
-                      message.success('Welcome completed!');
-                    }} className="!bg-indigo-600 font-semibold px-8 rounded-xl h-11">
-                    Start Learning
+                  <Button
+                    type="primary"
+                    size="large"
+                    onClick={() => handleCompleteAndNavigateNext(activeLesson)}
+                    className="!bg-indigo-600 hover:!bg-indigo-700 font-semibold px-8 rounded-xl h-11 shadow-sm flex items-center gap-2 mx-auto"
+                  >
+                    <span>Start Learning</span>
+                    <ChevronRight className="w-4 h-4" />
                   </Button>
                 </div>
               ) : isFeedbackStage ? (
@@ -611,11 +677,13 @@ export const LearningPlayerPage: React.FC = () => {
                   <div className="text-sm text-gray-600 mb-8 leading-relaxed">
                     {activeLesson?.article_content || 'Review these critical reference materials and keep them handy.'}
                   </div>
-                  <Button type="primary" onClick={() => {
-                      completeLessonMutation.mutate({ lessonId: activeLesson.id, lastPositionSeconds: 100, watchPercentage: 100 });
-                      message.success('Reference materials marked as read!');
-                    }} className="!bg-black font-semibold rounded-xl">
-                    Mark as Read & Continue
+                  <Button
+                    type="primary"
+                    onClick={() => handleCompleteAndNavigateNext(activeLesson)}
+                    className="!bg-black hover:!bg-gray-800 font-semibold rounded-xl flex items-center gap-2"
+                  >
+                    <span>Mark as Read & Continue</span>
+                    <ChevronRight className="w-4 h-4" />
                   </Button>
                 </div>
               ) : (
@@ -628,11 +696,15 @@ export const LearningPlayerPage: React.FC = () => {
                   <div className="prose prose-sm sm:prose-base max-w-none text-gray-700 leading-loose mb-8 whitespace-pre-wrap">
                     {activeLesson?.article_content || 'Read through the material carefully to complete this lesson.'}
                   </div>
-                  <Button type="primary" icon={<CheckCircle2 className="w-4 h-4" />} size="large" onClick={() => {
-                      completeLessonMutation.mutate({ lessonId: activeLesson.id, lastPositionSeconds: 100, watchPercentage: 100 });
-                      message.success('Lesson marked as completed!');
-                    }} className="!bg-emerald-600 hover:!bg-emerald-700 font-semibold h-11 px-6 rounded-xl border-0">
-                    Mark as Read & Continue
+                  <Button
+                    type="primary"
+                    icon={<CheckCircle2 className="w-4 h-4" />}
+                    size="large"
+                    onClick={() => handleCompleteAndNavigateNext(activeLesson)}
+                    className="!bg-emerald-600 hover:!bg-emerald-700 font-semibold h-11 px-6 rounded-xl border-0 flex items-center gap-2"
+                  >
+                    <span>Mark as Read & Continue</span>
+                    <ChevronRight className="w-4 h-4" />
                   </Button>
                 </div>
               )}
@@ -675,23 +747,25 @@ export const LearningPlayerPage: React.FC = () => {
             </div>
           )}
 
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
-            <div className="min-w-0">
-              <h2 className="text-lg font-bold text-[#111111] break-words">{activeLesson?.title}</h2>
-              <div className="text-xs text-gray-500 break-words">{course?.title}</div>
-            </div>
+          {!isWelcomeStage && !isFeedbackStage && (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
+              <div className="min-w-0">
+                <h2 className="text-lg font-bold text-[#111111] break-words">{activeLesson?.title}</h2>
+                <div className="text-xs text-gray-500 break-words">{course?.title}</div>
+              </div>
 
-            {isEligibleForCertificate && (
-              <Button
-                type="primary"
-                icon={<Award className="w-4 h-4 text-amber-300" />}
-                onClick={() => generateCertMutation.mutate()}
-                className="!bg-black font-semibold w-full sm:w-auto shrink-0"
-              >
-                Claim Verified Certificate
-              </Button>
-            )}
-          </div>
+              {isEligibleForCertificate && (
+                <Button
+                  type="primary"
+                  icon={<Award className="w-4 h-4 text-amber-300" />}
+                  onClick={() => generateCertMutation.mutate()}
+                  className="!bg-black font-semibold w-full sm:w-auto shrink-0"
+                >
+                  Claim Verified Certificate
+                </Button>
+              )}
+            </div>
+          )}
 
           {hasAttachments && (
             <div className="mt-6 border-t border-gray-100 pt-6">
@@ -731,6 +805,39 @@ export const LearningPlayerPage: React.FC = () => {
               </div>
             </div>
           )}
+
+          {/* Bottom Next / Previous Lesson Navigation Bar */}
+          <div className="p-4 bg-white border border-gray-200 rounded-2xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 mt-6">
+            <Button
+              icon={<ChevronLeft className="w-4 h-4" />}
+              disabled={!prevLesson}
+              onClick={() => {
+                if (prevLesson) {
+                  setActiveLesson(prevLesson);
+                  setSearchParams({ lesson: prevLesson.id }, { replace: true });
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+              }}
+              className="w-full sm:w-auto rounded-xl"
+            >
+              Previous Lesson
+            </Button>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              <Button
+                type="primary"
+                icon={<ChevronRight className="w-4 h-4" />}
+                onClick={() => handleCompleteAndNavigateNext(activeLesson)}
+                className="!bg-indigo-600 hover:!bg-indigo-700 font-semibold h-10 px-5 rounded-xl w-full sm:w-auto flex items-center justify-center gap-1.5 shadow-sm"
+              >
+                {nextLesson ? (
+                  <span>Next: {nextLesson.title}</span>
+                ) : (
+                  <span>Complete Course</span>
+                )}
+              </Button>
+            </div>
+          </div>
         </div>
 
         {/* Syllabus Sidebar */}
@@ -779,7 +886,7 @@ export const LearningPlayerPage: React.FC = () => {
                           }`}
                         >
                           <div className="flex items-center gap-2 truncate">
-                            <PlayCircle className="w-3.5 h-3.5 shrink-0" />
+                            {getLessonIcon(lesson)}
                             <span className="truncate">{lesson.title}</span>
                           </div>
                           {isCompleted && (
