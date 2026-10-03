@@ -138,7 +138,7 @@ class CourseService {
         // Fetch Sections
         const sectionsRes = await (0, connection_1.executeQuery)(`SELECT * FROM ${this.schema}.course_sections WHERE course_id = $1 ORDER BY order_index ASC, created_at ASC`, [courseId]);
         // Fetch Lessons with metadata (size, timestamps)
-        const lessonsRes = await (0, connection_1.executeQuery)(`SELECT l.id, l.section_id, l.title, l.content_type, l.video_url, l.video_duration_seconds, l.order_index, l.is_free_preview, l.video_file_size_bytes, l.created_at, l.updated_at, l.quiz_id,
+        const lessonsRes = await (0, connection_1.executeQuery)(`SELECT l.id, l.section_id, l.title, l.content_type, l.video_url, l.video_duration_seconds, l.order_index, l.is_free_preview, l.video_file_size_bytes, l.created_at, l.updated_at, l.quiz_id, l.attachments, l.document_url, l.article_content, l.hls_status, l.hls_master_url,
               q.max_attempts as quiz_max_attempts, q.passing_score_percentage as quiz_passing_score_percentage, q.quiz_type as quiz_type,
               (SELECT COUNT(*) FROM ${this.schema}.quiz_questions qq WHERE qq.quiz_id = l.quiz_id) as quiz_question_count
        FROM ${this.schema}.lessons l

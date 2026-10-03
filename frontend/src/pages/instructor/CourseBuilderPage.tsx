@@ -24,6 +24,10 @@ export const CourseBuilderPage: React.FC = () => {
   const [uploadingLessonVideoId, setUploadingLessonVideoId] = useState<string | null>(null);
   const [previewLesson, setPreviewLesson] = useState<any>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  
+  // Attachment Manager State
+  const [attachmentManagerModalOpen, setAttachmentManagerModalOpen] = useState(false);
+  const [managingAttachmentLesson, setManagingAttachmentLesson] = useState<any | null>(null);
 
   const [sectionForm] = Form.useForm();
   const [lessonForm] = Form.useForm();
@@ -499,7 +503,20 @@ export const CourseBuilderPage: React.FC = () => {
                             )}
                           </div>
                           {lesson.attachments && lesson.attachments.length > 0 && (
-                            <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              <Tag 
+                                color="processing" 
+                                className="cursor-pointer m-0 flex items-center gap-1 py-0.5 border-indigo-200 bg-indigo-50 text-indigo-700 font-medium"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setManagingAttachmentLesson(lesson);
+                                  setAttachmentManagerModalOpen(true);
+                                }}
+                              >
+                                <Paperclip className="w-3 h-3" />
+                                {lesson.attachments.length} Attached {lesson.attachments.length === 1 ? 'File' : 'Files'}
+                              </Tag>
+                              
                               {lesson.attachments.map((att: any, idx: number) => {
                                 const fileName = att.name || att.file_name || 'Attachment';
                                 const fileUrl = att.url || att.file_url || '#';
@@ -552,29 +569,18 @@ export const CourseBuilderPage: React.FC = () => {
                       <div className="flex items-center gap-2">
                         {/* Attachments Section */}
                         <div onClick={(e) => e.stopPropagation()}>
-                          <Upload
-                            showUploadList={false}
-                            accept=".pdf,.docx,.zip,.txt,.js,.py,.html,.css,.md,.csv,.xlsx,.json"
-                            beforeUpload={async (file) => {
-                              const formData = new FormData();
-                              formData.append('file', file);
-                              formData.append('attachment', file);
-                              try {
-                                await ApiClient.post(`/courses/UploadLessonAttachment/${lesson.id}`, formData, {
-                                  headers: { 'Content-Type': 'multipart/form-data' },
-                                });
-                                message.success(`Attachment "${file.name}" uploaded successfully to S3!`);
-                                queryClient.invalidateQueries({ queryKey: ['course-details', courseId] });
-                              } catch (err: any) {
-                                message.error(err.response?.data?.message || 'Failed to upload attachment.');
-                              }
-                              return false;
-                            }}
-                          >
-                            <Button size="small" icon={<Paperclip className="w-3 h-3 text-emerald-600" />} className="text-xs">
-                              Add Attachment
-                            </Button>
-                          </Upload>
+                           <Button 
+                             size="small" 
+                             icon={<Paperclip className="w-3 h-3 text-emerald-600" />} 
+                             className="text-xs"
+                             onClick={(e) => {
+                               e.stopPropagation();
+                               setManagingAttachmentLesson(lesson);
+                               setAttachmentManagerModalOpen(true);
+                             }}
+                           >
+                             {lesson.attachments?.length ? `Attachments (${lesson.attachments.length})` : 'Add Attachment'}
+                           </Button>
                         </div>
                         {lesson.content_type === 'VIDEO' && (
                             <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-2">
@@ -632,7 +638,7 @@ export const CourseBuilderPage: React.FC = () => {
         {/* Video Preview Right Column */}
         <div className="lg:col-span-1">
           <Card 
-            title={<span className="text-sm font-semibold text-gray-800">Video Preview</span>} 
+            title={<span className="text-sm font-semibold text-gray-800">Lesson Preview & Resources</span>} 
             className="!rounded-xl sticky top-6 border-[#e5e5e5]"
             bodyStyle={{ padding: '16px' }}
           >
@@ -645,18 +651,73 @@ export const CourseBuilderPage: React.FC = () => {
                   <video 
                     key={previewLesson.id}
                     controls 
-                    className="w-full rounded-lg bg-black aspect-video object-contain"
+                    className="w-full rounded-lg bg-black aspect-video object-contain mb-4"
                     src={previewLesson.video_url}
                   />
                 ) : (
-                  <div className="bg-gray-50 rounded-lg p-6 text-center text-gray-500 text-xs border border-dashed border-gray-300">
+                  <div className="bg-gray-50 rounded-lg p-6 text-center text-gray-500 text-xs border border-dashed border-gray-300 mb-4">
                     No video uploaded for this lesson yet.
                   </div>
                 )}
+                
+                {/* Dedicated Lesson Attachments & Resources Section */}
+                <div className="border-t border-gray-100 pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-semibold text-gray-800 flex items-center gap-1.5">
+                      <Paperclip className="w-3.5 h-3.5 text-gray-500" />
+                      Lesson Attachments & Resources
+                    </span>
+                    <Button 
+                      type="dashed" 
+                      size="small" 
+                      icon={<Plus className="w-3 h-3" />}
+                      className="text-[11px] font-medium"
+                      onClick={() => {
+                        setManagingAttachmentLesson(previewLesson);
+                        setAttachmentManagerModalOpen(true);
+                      }}
+                    >
+                      Upload
+                    </Button>
+                  </div>
+                  
+                  {!previewLesson.attachments || previewLesson.attachments.length === 0 ? (
+                    <div className="text-[11px] text-gray-400 text-center py-3 bg-gray-50 rounded-lg border border-gray-100">
+                      No resources attached.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {previewLesson.attachments.map((att: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 border border-gray-200 rounded-lg hover:border-indigo-200 transition-colors group">
+                          <div className="flex items-center gap-2 overflow-hidden">
+                            <Paperclip className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <a 
+                              href={att.url || att.file_url || '#'} 
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="text-[11px] font-medium text-gray-700 hover:text-indigo-600 truncate max-w-[150px]"
+                            >
+                              {att.name || att.file_name || `Attachment ${idx + 1}`}
+                            </a>
+                          </div>
+                          <a 
+                            href={att.url || att.file_url || '#'} 
+                            target="_blank" 
+                            rel="noreferrer"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-gray-400 hover:text-indigo-600"
+                            title="Download"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="bg-gray-50 rounded-lg p-6 text-center text-gray-500 text-xs border border-dashed border-gray-200">
-                Click a lesson from the curriculum list to preview its video here.
+                Click a lesson from the curriculum list to preview its video and attachments here.
               </div>
             )}
           </Card>
@@ -929,6 +990,143 @@ export const CourseBuilderPage: React.FC = () => {
             <Input placeholder="Brief explanation of why this option is correct" />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Attachment Manager Modal */}
+      <Modal
+        title={`Manage Lesson Attachments & Downloads - ${managingAttachmentLesson?.title || ''}`}
+        open={attachmentManagerModalOpen}
+        onCancel={() => {
+          setAttachmentManagerModalOpen(false);
+          setManagingAttachmentLesson(null);
+        }}
+        footer={null}
+        width={700}
+        destroyOnClose
+      >
+        <p className="text-xs text-gray-500 mb-4">
+          Uploaded course files, cheatsheets, PDFs, and downloadable exercise materials.
+        </p>
+
+        <Upload.Dragger
+          accept=".pdf,.docx,.zip,.txt,.js,.py,.html,.css,.md,.csv,.xlsx,.json"
+          showUploadList={false}
+          customRequest={async ({ file, onSuccess, onError, onProgress }) => {
+            const formData = new FormData();
+            formData.append('file', file as File);
+            formData.append('attachment', file as File);
+            try {
+              await ApiClient.post(`/courses/UploadLessonAttachment/${managingAttachmentLesson.id}`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+                onUploadProgress: (e) => {
+                  if (e.total) {
+                    onProgress?.({ percent: Math.round((e.loaded * 100) / e.total) });
+                  }
+                },
+              });
+              message.success('Attachment uploaded successfully!');
+              queryClient.invalidateQueries({ queryKey: ['course-details', courseId] });
+              // Update the local state for managingAttachmentLesson so modal updates without closing
+              const res = await ApiClient.get(`/courses/GetCourseDetails/${courseId}`);
+              const updatedCourse = res.data?.data;
+              if (updatedCourse) {
+                const updatedLesson = updatedCourse.sections
+                  ?.flatMap((s: any) => s.lessons)
+                  ?.find((l: any) => l.id === managingAttachmentLesson.id);
+                if (updatedLesson) {
+                  setManagingAttachmentLesson(updatedLesson);
+                }
+              }
+              onSuccess?.("ok");
+            } catch (err: any) {
+              message.error('Failed to upload attachment.');
+              onError?.(err);
+            }
+          }}
+          className="mb-6 !bg-gray-50 hover:!bg-indigo-50 border-2 border-dashed border-gray-200 hover:border-indigo-300"
+        >
+          <div className="py-4">
+            <UploadCloud className="w-8 h-8 text-indigo-500 mx-auto mb-2" />
+            <p className="text-sm font-semibold text-gray-800">Click or drag file to upload</p>
+            <p className="text-xs text-gray-500 mt-1">Supports PDF, ZIP, code files, and documents</p>
+          </div>
+        </Upload.Dragger>
+
+        <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+          {!managingAttachmentLesson?.attachments || managingAttachmentLesson.attachments.length === 0 ? (
+            <div className="text-center py-8 bg-gray-50 rounded-xl border border-gray-100">
+              <p className="text-sm text-gray-500">No attachments uploaded yet for this lesson. Upload PDFs, ZIPs, or notes above.</p>
+            </div>
+          ) : (
+            managingAttachmentLesson.attachments.map((att: any, idx: number) => {
+              const fileName = att.name || att.file_name || `Attachment ${idx + 1}`;
+              const fileUrl = att.url || att.file_url || '#';
+              const formatFileSize = (bytes?: number) => {
+                if (!bytes) return 'Unknown size';
+                return `${(bytes / 1024).toFixed(0)} KB`;
+              };
+
+              return (
+                <div key={idx} className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-xl hover:border-indigo-200 transition-all">
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    <div className="w-10 h-10 rounded-lg bg-gray-50 flex items-center justify-center shrink-0">
+                      <Paperclip className="w-5 h-5 text-gray-500" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-gray-900 truncate">{fileName}</div>
+                      <div className="text-xs text-gray-500 flex items-center gap-2">
+                        <span>{formatFileSize(att.size || att.file_size)}</span>
+                        <span>•</span>
+                        <span>{new Date(att.created_at || Date.now()).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button 
+                      type="text" 
+                      size="small" 
+                      onClick={() => window.open(fileUrl, '_blank')}
+                      className="text-indigo-600 font-medium text-xs"
+                    >
+                      Open / Download
+                    </Button>
+                    <Button 
+                      type="text" 
+                      size="small" 
+                      onClick={() => {
+                        navigator.clipboard.writeText(fileUrl);
+                        message.success('Link copied!');
+                      }}
+                      className="text-gray-600 font-medium text-xs"
+                    >
+                      Copy Link
+                    </Button>
+                    <Popconfirm
+                      title="Delete this attachment?"
+                      onConfirm={async () => {
+                        await handleDeleteLessonAttachment(managingAttachmentLesson.id, fileUrl);
+                        // Refresh managing lesson
+                        const res = await ApiClient.get(`/courses/GetCourseDetails/${courseId}`);
+                        const updatedCourse = res.data?.data;
+                        if (updatedCourse) {
+                          const updatedLesson = updatedCourse.sections
+                            ?.flatMap((s: any) => s.lessons)
+                            ?.find((l: any) => l.id === managingAttachmentLesson.id);
+                          setManagingAttachmentLesson(updatedLesson || null);
+                        }
+                      }}
+                      okText="Delete"
+                      cancelText="Cancel"
+                      okButtonProps={{ danger: true }}
+                    >
+                      <Button type="text" danger size="small" icon={<Trash2 className="w-4 h-4" />} />
+                    </Popconfirm>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
       </Modal>
 
       {/* Edit Course Meta Modal */}
