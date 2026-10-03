@@ -570,6 +570,7 @@ export async function InitializeDatabase(): Promise<void> {
     -- Lessons columns
     ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS document_url TEXT;
+    ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS quiz_id UUID REFERENCES ${schema}.quizzes(id) ON DELETE SET NULL;
     ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS content_type VARCHAR(50) DEFAULT 'VIDEO';
     ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS video_url TEXT;
     ALTER TABLE ${schema}.lessons ADD COLUMN IF NOT EXISTS video_duration_seconds INTEGER DEFAULT 0;
@@ -586,6 +587,9 @@ export async function InitializeDatabase(): Promise<void> {
     -- Quiz columns
     ALTER TABLE ${schema}.quizzes ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE ${schema}.quizzes ADD COLUMN IF NOT EXISTS document_url TEXT;
+    ALTER TABLE ${schema}.quizzes ADD COLUMN IF NOT EXISTS max_attempts INTEGER DEFAULT 1;
+    ALTER TABLE ${schema}.quizzes ADD COLUMN IF NOT EXISTS passing_score_percentage INTEGER DEFAULT 80;
+    ALTER TABLE ${schema}.quizzes ADD COLUMN IF NOT EXISTS quiz_type VARCHAR(50) DEFAULT 'MODULE';
 
     -- Video Interactive Questions columns
     ALTER TABLE ${schema}.video_interactive_questions ADD COLUMN IF NOT EXISTS explanation TEXT;

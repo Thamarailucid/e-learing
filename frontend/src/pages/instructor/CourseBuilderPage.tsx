@@ -385,7 +385,7 @@ export const CourseBuilderPage: React.FC = () => {
               <p className="text-xs text-gray-500">Organize your course into sections, upload videos, and place interactive checkpoints</p>
             </div>
             <div className="flex gap-2">
-              <Popconfirm title="Generate Coursera-Style Course Flow?" description="This will generate a structured 4-module pedagogical framework: 1. Welcome & Orientation, 2. Core Concepts, 3. Reference Materials & Downloads, 4. Conclusion & Feedback." onConfirm={() => scaffoldMutation.mutate()}>
+              <Popconfirm title="Generate Coursera-Style Course Flow?" description="This will generate a structured 4-module pedagogical framework with 3-question module quizzes (1 try) and a 10-12 question final exam (80% cut-off, unlimited retries)." onConfirm={() => scaffoldMutation.mutate()}>
                 <Button icon={<Sparkles className="w-4 h-4 text-amber-500" />}>
                   Scaffold Coursera Flow
                 </Button>
@@ -487,7 +487,16 @@ export const CourseBuilderPage: React.FC = () => {
                             )}
                           </div>
                           <div className="text-[11px] text-gray-500">
-                            {lesson.content_type} • {lesson.video_duration_seconds ? `${Math.floor(lesson.video_duration_seconds / 60)} mins` : 'Article / Resource'}
+                            {lesson.content_type === 'QUIZ' ? (
+                              <span className="flex items-center gap-1 font-medium text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-100 w-fit">
+                                <HelpCircle className="w-3 h-3 text-purple-600" />
+                                {lesson.title?.toLowerCase().includes('final')
+                                  ? 'Final Exam • 80% Cut-off • Unlimited Tries'
+                                  : 'Module Quiz • 3 Questions • 1 Try'}
+                              </span>
+                            ) : (
+                              <>{lesson.content_type} • {lesson.video_duration_seconds ? `${Math.floor(lesson.video_duration_seconds / 60)} mins` : 'Article / Resource'}</>
+                            )}
                           </div>
                           {lesson.attachments && lesson.attachments.length > 0 && (
                             <div className="mt-1.5 flex flex-wrap gap-1.5">

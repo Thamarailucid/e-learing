@@ -7,6 +7,7 @@ const ApiError_1 = require("../../utils/ApiError");
 const FileStorageFactory_1 = require("../../services/storage/FileStorageFactory");
 const AssetNamingUtils_1 = require("../../utils/AssetNamingUtils");
 const ClientIpResolver_1 = require("../../utils/ClientIpResolver");
+const QuizService_1 = require("../quizzes/QuizService");
 class CourseService {
     schema = environment_1.EnvironmentConfig.database.schema;
     storage = FileStorageFactory_1.FileStorageFactory.getInstance();
@@ -137,8 +138,12 @@ class CourseService {
         // Fetch Sections
         const sectionsRes = await (0, connection_1.executeQuery)(`SELECT * FROM ${this.schema}.course_sections WHERE course_id = $1 ORDER BY order_index ASC, created_at ASC`, [courseId]);
         // Fetch Lessons with metadata (size, timestamps)
-        const lessonsRes = await (0, connection_1.executeQuery)(`SELECT id, section_id, title, content_type, video_url, video_duration_seconds, order_index, is_free_preview, video_file_size_bytes, created_at, updated_at
-       FROM ${this.schema}.lessons WHERE course_id = $1 ORDER BY order_index ASC, created_at ASC`, [courseId]);
+        const lessonsRes = await (0, connection_1.executeQuery)(`SELECT l.id, l.section_id, l.title, l.content_type, l.video_url, l.video_duration_seconds, l.order_index, l.is_free_preview, l.video_file_size_bytes, l.created_at, l.updated_at, l.quiz_id,
+              q.max_attempts as quiz_max_attempts, q.passing_score_percentage as quiz_passing_score_percentage, q.quiz_type as quiz_type,
+              (SELECT COUNT(*) FROM ${this.schema}.quiz_questions qq WHERE qq.quiz_id = l.quiz_id) as quiz_question_count
+       FROM ${this.schema}.lessons l
+       LEFT JOIN ${this.schema}.quizzes q ON q.id = l.quiz_id
+       WHERE l.course_id = $1 ORDER BY l.order_index ASC, l.created_at ASC`, [courseId]);
         const isStudent = callerRole === 'STUDENT';
         // Nest lessons inside sections, stripping sensitive fields for students
         const sections = sectionsRes.rows.map((sec) => ({
@@ -428,6 +433,7 @@ class CourseService {
         const modules = [
             {
                 title: 'Module 1: Course Orientation & Foundations',
+                isFinal: false,
                 lessons: [
                     { title: 'Welcome & Overview', type: 'VIDEO' },
                     { title: 'Syllabus & Learning Goals', type: 'ARTICLE' }
@@ -435,6 +441,7 @@ class CourseService {
             },
             {
                 title: 'Module 2: Core Concepts & Guided Practice',
+                isFinal: false,
                 lessons: [
                     { title: 'Introduction', type: 'VIDEO' },
                     { title: 'Practice reading note', type: 'ARTICLE' }
@@ -442,12 +449,14 @@ class CourseService {
             },
             {
                 title: 'Module 3: Reference Materials, Cheatsheets & Downloads',
+                isFinal: false,
                 lessons: [
                     { title: 'Course reference guides and downloads', type: 'DOCUMENT' }
                 ]
             },
             {
                 title: 'Module 4: Course Conclusion & Feedback',
+                isFinal: true,
                 lessons: [
                     { title: 'Course wrap-up', type: 'ARTICLE' },
                     { title: 'Feedback & Certificate unlock', type: 'ARTICLE' }
@@ -463,6 +472,47 @@ class CourseService {
             for (const les of mod.lessons) {
                 await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.lessons (organization_id, course_id, section_id, title, content_type, order_index)
            VALUES ($1, $2, $3, $4, $5, $6)`, [organizationId, courseId, secId, les.title, les.type, lesOrder++]);
+            }
+            // Add Quiz at the end of the module
+            if (!mod.isFinal) {
+                const questions = Array.from({ length: 3 }, (_, i) => ({
+                    questionText: `Module Quiz Question ${i + 1}`,
+                    options: ['Option A', 'Option B', 'Option C', 'Option D'],
+                    correctAnswer: 'Option A',
+                    explanation: 'Choose the best answer.',
+                    points: 1
+                }));
+                const quiz = await QuizService_1.quizService.CreateQuiz(organizationId, {
+                    courseId,
+                    sectionId: secId,
+                    title: `${mod.title} Quiz`,
+                    quizType: 'MODULE',
+                    passingScorePercentage: 70,
+                    maxAttempts: 1,
+                    questions
+                });
+                await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.lessons (organization_id, course_id, section_id, title, content_type, order_index, quiz_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`, [organizationId, courseId, secId, `${mod.title} Quiz`, 'QUIZ', lesOrder++, quiz.id]);
+            }
+            else {
+                const questions = Array.from({ length: 10 }, (_, i) => ({
+                    questionText: `Final Exam Question ${i + 1}`,
+                    options: ['Option A', 'Option B', 'Option C', 'Option D'],
+                    correctAnswer: 'Option A',
+                    explanation: 'Choose the best answer.',
+                    points: 1
+                }));
+                const quiz = await QuizService_1.quizService.CreateQuiz(organizationId, {
+                    courseId,
+                    sectionId: secId,
+                    title: 'Final Comprehensive Exam',
+                    quizType: 'FINAL',
+                    passingScorePercentage: 80,
+                    maxAttempts: undefined,
+                    questions
+                });
+                await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.lessons (organization_id, course_id, section_id, title, content_type, order_index, quiz_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`, [organizationId, courseId, secId, 'Final Comprehensive Exam', 'QUIZ', lesOrder++, quiz.id]);
             }
         }
         const lessonsCountRes = await (0, connection_1.executeQuery)(`SELECT COUNT(*) as count FROM ${this.schema}.lessons WHERE course_id = $1`, [courseId]);

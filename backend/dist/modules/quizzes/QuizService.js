@@ -35,8 +35,8 @@ class QuizService {
     async CreateQuiz(organizationId, data) {
         const quizRes = await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.quizzes (
         organization_id, course_id, section_id, title, description,
-        passing_score_percentage, time_limit_minutes, max_attempts
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`, [
+        passing_score_percentage, time_limit_minutes, max_attempts, quiz_type
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`, [
             organizationId,
             data.courseId,
             data.sectionId || null,
@@ -44,7 +44,8 @@ class QuizService {
             data.description || null,
             data.passingScorePercentage || 70,
             data.timeLimitMinutes || 20,
-            data.maxAttempts || 3,
+            data.maxAttempts || null,
+            data.quizType || 'MODULE',
         ]);
         const quiz = quizRes.rows[0];
         if (data.questions && data.questions.length > 0) {
@@ -66,29 +67,77 @@ class QuizService {
         }
         return this.GetQuizDetails(organizationId, quiz.id, false);
     }
+    async GetStudentQuizAttempts(organizationId, userId, quizId) {
+        const res = await (0, connection_1.executeQuery)(`SELECT id, attempt_number, score_percentage, is_passed, answers, completed_at
+       FROM ${this.schema}.quiz_attempts
+       WHERE organization_id = $1 AND user_id = $2 AND quiz_id = $3
+       ORDER BY attempt_number ASC`, [organizationId, userId, quizId]);
+        return res.rows;
+    }
     async SubmitQuizAttempt(organizationId, userId, quizId, submittedAnswers) {
         const fullQuiz = await this.GetQuizDetails(organizationId, quizId, false);
         const questions = fullQuiz.questions;
+        const attempts = await this.GetStudentQuizAttempts(organizationId, userId, quizId);
+        if (fullQuiz.max_attempts !== null && attempts.length >= fullQuiz.max_attempts) {
+            throw ApiError_1.ApiError.badRequest('Maximum attempts reached for this quiz.');
+        }
+        const attemptNumber = attempts.length + 1;
         let correctCount = 0;
         const totalQuestions = questions.length || 1;
+        const answersReview = [];
         questions.forEach((q) => {
             const studentAnswer = submittedAnswers[q.id];
-            if (studentAnswer && studentAnswer.trim().toLowerCase() === q.correct_answer.trim().toLowerCase()) {
+            const isCorrect = studentAnswer && studentAnswer.trim().toLowerCase() === q.correct_answer.trim().toLowerCase();
+            if (isCorrect) {
                 correctCount++;
             }
+            answersReview.push({
+                questionId: q.id,
+                questionText: q.question_text,
+                studentAnswer: studentAnswer || null,
+                correctAnswer: q.correct_answer,
+                isCorrect,
+                explanation: q.explanation
+            });
         });
         const scorePercentage = Math.round((correctCount / totalQuestions) * 100);
-        const isPassed = scorePercentage >= fullQuiz.passing_score_percentage;
+        const passingScorePercentage = fullQuiz.passing_score_percentage || 80;
+        const isPassed = scorePercentage >= passingScorePercentage;
         const attemptRes = await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.quiz_attempts (
-        organization_id, quiz_id, user_id, score_percentage, is_passed, answers
-      ) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`, [organizationId, quizId, userId, scorePercentage, isPassed, JSON.stringify(submittedAnswers)]);
+        organization_id, quiz_id, user_id, attempt_number, score_percentage, is_passed, answers
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`, [organizationId, quizId, userId, attemptNumber, scorePercentage, isPassed, JSON.stringify(submittedAnswers)]);
+        if (isPassed || fullQuiz.max_attempts === 1) {
+            // Find the lesson linked to this quiz
+            const lessonRes = await (0, connection_1.executeQuery)(`SELECT id, course_id FROM ${this.schema}.lessons WHERE quiz_id = $1 AND organization_id = $2 LIMIT 1`, [quizId, organizationId]);
+            if ((lessonRes.rowCount ?? 0) > 0) {
+                const lesson = lessonRes.rows[0];
+                // Mark lesson as completed
+                await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.student_lesson_progress (
+             organization_id, user_id, lesson_id, is_completed, watch_percentage, completed_at
+           ) VALUES ($1, $2, $3, TRUE, 100.00, CURRENT_TIMESTAMP)
+           ON CONFLICT (organization_id, user_id, lesson_id) 
+           DO UPDATE SET is_completed = TRUE, watch_percentage = 100.00, completed_at = COALESCE(${this.schema}.student_lesson_progress.completed_at, CURRENT_TIMESTAMP)`, [organizationId, userId, lesson.id]);
+                // Update student course progress
+                await (0, connection_1.executeQuery)(`UPDATE ${this.schema}.student_course_progress
+           SET completed_lessons_count = (
+                 SELECT COUNT(*) FROM ${this.schema}.student_lesson_progress
+                 WHERE organization_id = $1 AND user_id = $2 AND is_completed = TRUE
+                 AND lesson_id IN (SELECT id FROM ${this.schema}.lessons WHERE course_id = $3)
+               ),
+               last_activity_at = CURRENT_TIMESTAMP
+           WHERE organization_id = $1 AND user_id = $2 AND course_id = $3`, [organizationId, userId, lesson.course_id]);
+            }
+        }
         return {
             attemptId: attemptRes.rows[0].id,
             scorePercentage,
             isPassed,
+            passingScorePercentage,
+            maxAttempts: fullQuiz.max_attempts,
+            attemptsUsed: attemptNumber,
             correctCount,
             totalQuestions,
-            passingScorePercentage: fullQuiz.passing_score_percentage,
+            answersReview,
         };
     }
     async UploadQuizAttachment(organizationId, quizId, file) {

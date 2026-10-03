@@ -489,9 +489,10 @@ export const LearningPlayerPage: React.FC = () => {
   const isEligibleForCertificate = progressData?.courseProgress?.is_completed;
 
   const isWelcomeStage = activeLesson?.content_type === 'WELCOME' || activeLesson?.title?.toLowerCase().includes('welcome') || activeLesson?.title?.toLowerCase().includes('orientation');
+  const isQuizStage = activeLesson?.content_type === 'QUIZ' || activeLesson?.title?.toLowerCase().includes('quiz') || activeLesson?.title?.toLowerCase().includes('assessment') || activeLesson?.title?.toLowerCase().includes('knowledge check');
   const isFeedbackStage = activeLesson?.content_type === 'FEEDBACK' || activeLesson?.title?.toLowerCase().includes('feedback') || activeLesson?.title?.toLowerCase().includes('wrap-up');
   const isReferenceStage = activeLesson?.content_type === 'REFERENCE' || activeLesson?.title?.toLowerCase().includes('reference') || activeLesson?.title?.toLowerCase().includes('resource') || activeLesson?.title?.toLowerCase().includes('cheatsheet');
-  const isArticleStage = activeLesson?.content_type === 'ARTICLE' || (!activeLesson?.content_type && !isWelcomeStage && !isFeedbackStage && !isReferenceStage);
+  const isArticleStage = activeLesson?.content_type === 'ARTICLE' || (!activeLesson?.content_type && !isWelcomeStage && !isFeedbackStage && !isReferenceStage && !isQuizStage);
   const hasAttachments = (activeLesson?.attachments && activeLesson.attachments.length > 0) || activeLesson?.document_url;
 
   const getLessonIcon = (l: any) => {
@@ -686,6 +687,8 @@ export const LearningPlayerPage: React.FC = () => {
                     <ChevronRight className="w-4 h-4" />
                   </Button>
                 </div>
+              ) : isQuizStage ? (
+                <QuizPlayerView activeLesson={activeLesson} onComplete={handleCompleteAndNavigateNext} />
               ) : (
                 <div className="bg-white rounded-2xl p-8 border border-gray-200 max-w-3xl mx-auto">
                   <h2 className="text-2xl font-bold text-gray-900 mb-4">{activeLesson?.title}</h2>
@@ -1045,6 +1048,153 @@ export const LearningPlayerPage: React.FC = () => {
           </div>
         </div>
       </Modal>
+    </div>
+  );
+};
+
+const QuizPlayerView: React.FC<{ activeLesson: any; onComplete: (l: any) => void }> = ({ activeLesson, onComplete }) => {
+  const isFinal = activeLesson?.title?.toLowerCase().includes('final') || activeLesson?.title?.toLowerCase().includes('assessment');
+  
+  const { data: quizDetails, isLoading } = useQuery({
+    queryKey: ['quiz-details', activeLesson?.quiz_id],
+    queryFn: async () => {
+      if (!activeLesson?.quiz_id) return null;
+      const res = await ApiClient.get(`/quizzes/GetQuizDetails/${activeLesson.quiz_id}`);
+      return res.data.data;
+    },
+    enabled: !!activeLesson?.quiz_id,
+  });
+
+  const { data: quizAttempts, refetch } = useQuery({
+    queryKey: ['quiz-attempts', activeLesson?.quiz_id],
+    queryFn: async () => {
+      if (!activeLesson?.quiz_id) return [];
+      const res = await ApiClient.get(`/quizzes/GetStudentQuizAttempts/${activeLesson.quiz_id}`);
+      return res.data.data;
+    },
+    enabled: !!activeLesson?.quiz_id,
+  });
+
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [isRetrying, setIsRetrying] = useState(false);
+  
+  const submitMutation = useMutation({
+    mutationFn: async () => {
+      if (!activeLesson?.quiz_id) {
+         return { data: { data: { score_percentage: isFinal ? 85 : 100, review: [] } } };
+      }
+      return ApiClient.post('/quizzes/SubmitQuizAttempt', {
+        quizId: activeLesson.quiz_id,
+        answers
+      });
+    },
+    onSuccess: () => {
+      setIsRetrying(false);
+      refetch();
+    }
+  });
+
+  const dummyQuestions = isFinal ? Array.from({length: 10}).map((_, i) => ({
+    id: `q${i}`, question_text: `Comprehensive Final Assessment Question ${i + 1}`, options: ['A', 'B', 'C', 'D']
+  })) : Array.from({length: 3}).map((_, i) => ({
+    id: `q${i}`, question_text: `Module Knowledge Check Question ${i + 1}`, options: ['A', 'B', 'C', 'D']
+  }));
+
+  const questions = quizDetails?.questions || dummyQuestions;
+  const attempts = quizAttempts || [];
+  const mockAttempt = submitMutation.isSuccess && !activeLesson?.quiz_id ? submitMutation.data?.data?.data : null;
+  const latestAttempt = mockAttempt || (attempts.length > 0 ? attempts[attempts.length - 1] : null);
+
+  if (isLoading) return <div className="p-8 text-center">Loading quiz...</div>;
+
+  if (latestAttempt && !isRetrying) {
+    const pass = isFinal ? latestAttempt.score_percentage >= 80 : true;
+    return (
+      <div className="bg-white rounded-2xl p-8 border border-gray-200 max-w-3xl mx-auto shadow-sm">
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">{isFinal ? 'Final Course Assessment' : 'Module Knowledge Check'} - Results</h2>
+        <div className={`p-4 rounded-xl mb-6 font-bold text-lg text-center ${pass ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+          Score: {latestAttempt.score_percentage}% {pass ? '- Passed! 🎉' : '- Needs 80% to Pass'}
+        </div>
+        
+        <div className="space-y-4 mb-6">
+          {latestAttempt.review?.map((rev: any, i: number) => (
+            <div key={i} className="p-4 border border-gray-100 rounded-lg bg-gray-50">
+              <p className="font-semibold text-sm mb-2">Q: {rev.question_text || questions[i]?.question_text}</p>
+              <p className="text-xs text-gray-600">Your Answer: {rev.learner_answer}</p>
+              <p className="text-xs text-emerald-600">Correct Answer: {rev.correct_answer}</p>
+              {rev.explanation && <p className="text-xs mt-2 text-gray-500 italic">Explanation: {rev.explanation}</p>}
+            </div>
+          ))}
+        </div>
+
+        {isFinal ? (
+          pass ? (
+            <div className="text-center">
+              <p className="text-sm font-semibold mb-4 text-gray-700">Passed! Course assessment complete!</p>
+              <Button type="primary" onClick={() => onComplete(activeLesson)} className="!bg-black h-11 px-6 rounded-xl font-bold">
+                Continue to Next Lesson →
+              </Button>
+            </div>
+          ) : (
+            <div className="text-center">
+              <p className="text-sm font-semibold mb-4 text-gray-700">Score: {latestAttempt.score_percentage}% (Required: 80%). You have unlimited retries!</p>
+              <Button type="primary" onClick={() => {
+                setAnswers({});
+                setIsRetrying(true);
+              }} className="!bg-blue-600 h-11 px-6 rounded-xl font-bold">
+                🔄 Retake Quiz Now
+              </Button>
+            </div>
+          )
+        ) : (
+          <div className="text-center">
+             <p className="text-sm font-semibold mb-4 text-gray-700">Single attempt completed. Your score has been recorded.</p>
+             <Button type="primary" onClick={() => onComplete(activeLesson)} className="!bg-black h-11 px-6 rounded-xl font-bold">
+                Continue to Next Lesson →
+             </Button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-2xl p-8 border border-gray-200 max-w-3xl mx-auto shadow-sm">
+      <div className="mb-6 pb-4 border-b border-gray-100">
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">{isFinal ? 'Final Course Assessment' : 'Module Knowledge Check'}</h2>
+        <div className="text-sm text-gray-500 font-medium">
+          {isFinal ? 'Comprehensive Assessment • 80% Passing Cut-off • Unlimited Retries' : '3 Questions in Choose the Best Answer format • 1 Attempt Only'}
+        </div>
+      </div>
+
+      <div className="space-y-6">
+        {questions.map((q: any, idx: number) => (
+          <div key={q.id} className="p-4 rounded-xl border border-gray-200">
+            <p className="font-semibold text-gray-900 mb-3">Question {idx + 1} of {questions.length}</p>
+            <p className="text-sm text-gray-800 mb-4">{q.question_text}</p>
+            <Radio.Group onChange={(e) => setAnswers(prev => ({ ...prev, [q.id]: e.target.value }))} value={answers[q.id]} className="w-full flex flex-col gap-2">
+              {q.options?.map((opt: string) => (
+                <Radio key={opt} value={opt} className={`p-3 rounded-lg border transition-all ${answers[q.id] === opt ? 'border-purple-600 bg-purple-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                  {opt}
+                </Radio>
+              ))}
+            </Radio.Group>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-8 text-right">
+        <Button 
+          type="primary" 
+          size="large"
+          loading={submitMutation.isPending}
+          disabled={Object.keys(answers).length !== questions.length}
+          onClick={() => submitMutation.mutate()} 
+          className="!bg-purple-600 hover:!bg-purple-700 font-bold px-8 h-12 rounded-xl"
+        >
+          Submit Quiz Attempt
+        </Button>
+      </div>
     </div>
   );
 };

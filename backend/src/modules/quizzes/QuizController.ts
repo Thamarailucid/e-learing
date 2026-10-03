@@ -77,6 +77,17 @@ export class QuizController {
     }
   }
 
+  async GetStudentQuizAttempts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const orgId = req.organizationId!;
+      const { quizId } = req.params;
+      const result = await quizService.GetStudentQuizAttempts(orgId, req.user!.userId, quizId);
+      res.json(ApiResponse.success('Quiz attempts retrieved successfully.', result));
+    } catch (err) {
+      next(err);
+    }
+  }
+
   async UploadQuizAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const orgId = req.organizationId!;
