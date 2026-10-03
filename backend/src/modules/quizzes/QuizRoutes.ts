@@ -23,6 +23,30 @@ router.post(
   (req, res, next) => quizController.CreateQuiz(req, res, next)
 );
 
+router.put(
+  '/UpdateQuiz/:quizId',
+  AuthorizeRoles('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'),
+  (req, res, next) => quizController.UpdateQuiz(req, res, next)
+);
+
+router.post(
+  '/AddQuizQuestion/:quizId',
+  AuthorizeRoles('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'),
+  (req, res, next) => quizController.AddQuizQuestion(req, res, next)
+);
+
+router.put(
+  '/UpdateQuizQuestion/:questionId',
+  AuthorizeRoles('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'),
+  (req, res, next) => quizController.UpdateQuizQuestion(req, res, next)
+);
+
+router.delete(
+  '/DeleteQuizQuestion/:questionId',
+  AuthorizeRoles('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'),
+  (req, res, next) => quizController.DeleteQuizQuestion(req, res, next)
+);
+
 router.post('/UploadQuizAttachment/:quizId', AuthorizeRoles('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'), uploadDoc.any(), (req, res, next) => quizController.UploadQuizAttachment(req, res, next));
 router.post('/DeleteQuizAttachment/:quizId', AuthorizeRoles('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'), (req, res, next) => quizController.DeleteQuizAttachment(req, res, next));
 router.delete('/DeleteQuizAttachment/:quizId', AuthorizeRoles('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'), (req, res, next) => quizController.DeleteQuizAttachment(req, res, next));

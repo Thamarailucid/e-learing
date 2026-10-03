@@ -234,6 +234,19 @@ class CourseService {
        VALUES ($1, $2, $3, $4) RETURNING *`, [organizationId, courseId, title, orderIndex]);
         return res.rows[0];
     }
+    async UpdateCourseSection(organizationId, sectionId, title, orderIndex) {
+        let query = `UPDATE ${this.schema}.course_sections SET title = $1, updated_at = CURRENT_TIMESTAMP`;
+        const params = [title, sectionId, organizationId];
+        if (orderIndex !== undefined) {
+            query += `, order_index = $4`;
+            params.push(orderIndex);
+        }
+        query += ` WHERE id = $2 AND organization_id = $3 RETURNING *`;
+        const res = await (0, connection_1.executeQuery)(query, params);
+        if (res.rowCount === 0)
+            throw ApiError_1.ApiError.notFound('Course section not found.');
+        return res.rows[0];
+    }
     async CreateLesson(organizationId, courseId, sectionId, data) {
         const res = await (0, connection_1.executeQuery)(`INSERT INTO ${this.schema}.lessons (
         organization_id, course_id, section_id, title, content_type,
@@ -256,6 +269,29 @@ class CourseService {
         const lessonsCountRes = await (0, connection_1.executeQuery)(`SELECT COUNT(*) as count FROM ${this.schema}.lessons WHERE course_id = $1`, [courseId]);
         const totalLessons = parseInt(lessonsCountRes.rows[0].count, 10);
         await (0, connection_1.executeQuery)(`UPDATE ${this.schema}.student_course_progress SET total_lessons_count = $1 WHERE course_id = $2`, [totalLessons, courseId]);
+        return res.rows[0];
+    }
+    async UpdateLesson(organizationId, lessonId, data) {
+        const fields = [];
+        const params = [lessonId, organizationId];
+        Object.entries(data).forEach(([key, val]) => {
+            if (val !== undefined) {
+                params.push(val);
+                const snakeKey = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+                fields.push(`${snakeKey} = $${params.length}`);
+            }
+        });
+        if (fields.length === 0) {
+            const existing = await (0, connection_1.executeQuery)(`SELECT * FROM ${this.schema}.lessons WHERE id = $1 AND organization_id = $2`, [lessonId, organizationId]);
+            if (existing.rowCount === 0)
+                throw ApiError_1.ApiError.notFound('Lesson not found.');
+            return existing.rows[0];
+        }
+        params.push(new Date());
+        fields.push(`updated_at = $${params.length}`);
+        const res = await (0, connection_1.executeQuery)(`UPDATE ${this.schema}.lessons SET ${fields.join(', ')} WHERE id = $1 AND organization_id = $2 RETURNING *`, params);
+        if (res.rowCount === 0)
+            throw ApiError_1.ApiError.notFound('Lesson not found.');
         return res.rows[0];
     }
     async UploadCourseThumbnail(organizationId, courseId, file) {

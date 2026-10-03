@@ -28,6 +28,8 @@ router.post('/UnpublishCourse/:courseId', (0, AuthorizePermission_1.AuthorizeRol
 router.delete('/DeleteCourse/:courseId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR', 'CONTENT_MANAGER'), (req, res, next) => CourseController_1.courseController.DeleteCourse(req, res, next));
 router.post('/CreateCourseSection', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR', 'CONTENT_MANAGER'), (req, res, next) => CourseController_1.courseController.CreateCourseSection(req, res, next));
 router.post('/CreateLesson', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR', 'CONTENT_MANAGER'), (req, res, next) => CourseController_1.courseController.CreateLesson(req, res, next));
+router.put('/UpdateCourseSection/:sectionId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR', 'CONTENT_MANAGER'), (req, res, next) => CourseController_1.courseController.UpdateCourseSection(req, res, next));
+router.put('/UpdateLesson/:lessonId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR', 'CONTENT_MANAGER'), (req, res, next) => CourseController_1.courseController.UpdateLesson(req, res, next));
 router.post('/UploadCourseThumbnail/:courseId', (0, AuthorizePermission_1.AuthorizeRoles)('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'), upload.single('thumbnail'), (req, res, next) => CourseController_1.courseController.UploadCourseThumbnail(req, res, next));
 // Security & Anti-Piracy Violation Logging
 router.post('/LogCourseViolation', (req, res, next) => CourseController_1.courseController.LogCourseViolation(req, res, next));

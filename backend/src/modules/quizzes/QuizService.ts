@@ -274,6 +274,80 @@ export class QuizService {
 
     return { success: true, attachments: updatedAttachments };
   }
+  async UpdateQuiz(organizationId: string, quizId: string, data: { title?: string; description?: string; passingScorePercentage?: number; maxAttempts?: number; timeLimitMinutes?: number }) {
+    const fields: string[] = [];
+    const params: any[] = [quizId, organizationId];
+
+    Object.entries(data).forEach(([key, val]) => {
+      if (val !== undefined) {
+        params.push(val);
+        const snakeKey = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+        fields.push(`${snakeKey} = $${params.length}`);
+      }
+    });
+
+    if (fields.length === 0) return this.GetQuizDetails(organizationId, quizId, false);
+
+    const res = await executeQuery(
+      `UPDATE ${this.schema}.quizzes SET ${fields.join(', ')} WHERE id = $1 AND organization_id = $2 RETURNING *`,
+      params
+    );
+    if (res.rowCount === 0) throw ApiError.notFound('Quiz not found.');
+    return this.GetQuizDetails(organizationId, quizId, false);
+  }
+
+  async AddQuizQuestion(organizationId: string, quizId: string, q: { questionText: string; options: string[]; correctAnswer: string; explanation?: string; points?: number; orderIndex?: number }) {
+    const res = await executeQuery(
+      `INSERT INTO ${this.schema}.quiz_questions (
+        organization_id, quiz_id, question_text, options, correct_answer, explanation, points, order_index
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [
+        organizationId,
+        quizId,
+        q.questionText,
+        JSON.stringify(q.options),
+        q.correctAnswer,
+        q.explanation || null,
+        q.points || 1,
+        q.orderIndex || 0,
+      ]
+    );
+    return res.rows[0];
+  }
+
+  async UpdateQuizQuestion(organizationId: string, questionId: string, q: { questionText?: string; options?: string[]; correctAnswer?: string; explanation?: string; points?: number; orderIndex?: number }) {
+    const fields: string[] = [];
+    const params: any[] = [questionId, organizationId];
+
+    if (q.questionText !== undefined) { params.push(q.questionText); fields.push(`question_text = $${params.length}`); }
+    if (q.options !== undefined) { params.push(JSON.stringify(q.options)); fields.push(`options = $${params.length}`); }
+    if (q.correctAnswer !== undefined) { params.push(q.correctAnswer); fields.push(`correct_answer = $${params.length}`); }
+    if (q.explanation !== undefined) { params.push(q.explanation); fields.push(`explanation = $${params.length}`); }
+    if (q.points !== undefined) { params.push(q.points); fields.push(`points = $${params.length}`); }
+    if (q.orderIndex !== undefined) { params.push(q.orderIndex); fields.push(`order_index = $${params.length}`); }
+
+    if (fields.length === 0) {
+      const existing = await executeQuery(`SELECT * FROM ${this.schema}.quiz_questions WHERE id = $1 AND organization_id = $2`, [questionId, organizationId]);
+      if (existing.rowCount === 0) throw ApiError.notFound('Question not found.');
+      return existing.rows[0];
+    }
+
+    const res = await executeQuery(
+      `UPDATE ${this.schema}.quiz_questions SET ${fields.join(', ')} WHERE id = $1 AND organization_id = $2 RETURNING *`,
+      params
+    );
+    if (res.rowCount === 0) throw ApiError.notFound('Question not found.');
+    return res.rows[0];
+  }
+
+  async DeleteQuizQuestion(organizationId: string, questionId: string) {
+    const res = await executeQuery(
+      `DELETE FROM ${this.schema}.quiz_questions WHERE id = $1 AND organization_id = $2 RETURNING id`,
+      [questionId, organizationId]
+    );
+    if (res.rowCount === 0) throw ApiError.notFound('Question not found.');
+    return { success: true, message: 'Question deleted successfully' };
+  }
 }
 
 export const quizService = new QuizService();

@@ -28,7 +28,23 @@ const CreateLessonSchema = z.object({
   courseId: z.string().uuid(),
   sectionId: z.string().uuid(),
   title: z.string().min(1, 'Lesson title is required.'),
-  contentType: z.enum(['VIDEO', 'DOCUMENT', 'ARTICLE']).optional(),
+  contentType: z.enum(['VIDEO', 'DOCUMENT', 'ARTICLE', 'QUIZ']).optional(),
+  videoUrl: z.string().optional(),
+  videoDurationSeconds: z.number().optional(),
+  articleContent: z.string().optional(),
+  documentUrl: z.string().optional(),
+  orderIndex: z.number().optional(),
+  isFreePreview: z.boolean().optional(),
+});
+
+const UpdateSectionSchema = z.object({
+  title: z.string().min(1, 'Section title is required.'),
+  orderIndex: z.number().optional(),
+});
+
+const UpdateLessonSchema = z.object({
+  title: z.string().min(1, 'Lesson title is required.').optional(),
+  contentType: z.enum(['VIDEO', 'DOCUMENT', 'ARTICLE', 'QUIZ']).optional(),
   videoUrl: z.string().optional(),
   videoDurationSeconds: z.number().optional(),
   articleContent: z.string().optional(),
@@ -148,12 +164,36 @@ export class CourseController {
     }
   }
 
+  async UpdateCourseSection(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const orgId = req.organizationId!;
+      const { sectionId } = req.params;
+      const parsed = UpdateSectionSchema.parse(req.body);
+      const result = await courseService.UpdateCourseSection(orgId, sectionId, parsed.title, parsed.orderIndex);
+      res.json(ApiResponse.success('Course section updated successfully.', result));
+    } catch (err) {
+      next(err);
+    }
+  }
+
   async CreateLesson(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const orgId = req.organizationId!;
       const parsed = CreateLessonSchema.parse(req.body);
       const result = await courseService.CreateLesson(orgId, parsed.courseId, parsed.sectionId, parsed);
       res.status(201).json(ApiResponse.success('Lesson created successfully.', result));
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async UpdateLesson(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const orgId = req.organizationId!;
+      const { lessonId } = req.params;
+      const parsed = UpdateLessonSchema.parse(req.body);
+      const result = await courseService.UpdateLesson(orgId, lessonId, parsed);
+      res.json(ApiResponse.success('Lesson updated successfully.', result));
     } catch (err) {
       next(err);
     }

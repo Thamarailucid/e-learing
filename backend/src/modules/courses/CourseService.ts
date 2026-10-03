@@ -327,6 +327,21 @@ export class CourseService {
     return res.rows[0];
   }
 
+  async UpdateCourseSection(organizationId: string, sectionId: string, title: string, orderIndex?: number) {
+    let query = `UPDATE ${this.schema}.course_sections SET title = $1, updated_at = CURRENT_TIMESTAMP`;
+    const params: any[] = [title, sectionId, organizationId];
+    
+    if (orderIndex !== undefined) {
+      query += `, order_index = $4`;
+      params.push(orderIndex);
+    }
+    query += ` WHERE id = $2 AND organization_id = $3 RETURNING *`;
+    
+    const res = await executeQuery(query, params);
+    if (res.rowCount === 0) throw ApiError.notFound('Course section not found.');
+    return res.rows[0];
+  }
+
   async CreateLesson(organizationId: string, courseId: string, sectionId: string, data: {
     title: string;
     contentType?: string;
@@ -370,6 +385,44 @@ export class CourseService {
       [totalLessons, courseId]
     );
 
+    return res.rows[0];
+  }
+
+  async UpdateLesson(organizationId: string, lessonId: string, data: {
+    title?: string;
+    contentType?: string;
+    videoDurationSeconds?: number;
+    videoUrl?: string;
+    articleContent?: string;
+    documentUrl?: string;
+    isFreePreview?: boolean;
+    orderIndex?: number;
+  }) {
+    const fields: string[] = [];
+    const params: any[] = [lessonId, organizationId];
+
+    Object.entries(data).forEach(([key, val]) => {
+      if (val !== undefined) {
+        params.push(val);
+        const snakeKey = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+        fields.push(`${snakeKey} = $${params.length}`);
+      }
+    });
+
+    if (fields.length === 0) {
+      const existing = await executeQuery(`SELECT * FROM ${this.schema}.lessons WHERE id = $1 AND organization_id = $2`, [lessonId, organizationId]);
+      if (existing.rowCount === 0) throw ApiError.notFound('Lesson not found.');
+      return existing.rows[0];
+    }
+
+    params.push(new Date());
+    fields.push(`updated_at = $${params.length}`);
+
+    const res = await executeQuery(
+      `UPDATE ${this.schema}.lessons SET ${fields.join(', ')} WHERE id = $1 AND organization_id = $2 RETURNING *`,
+      params
+    );
+    if (res.rowCount === 0) throw ApiError.notFound('Lesson not found.');
     return res.rows[0];
   }
 

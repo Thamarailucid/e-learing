@@ -62,6 +62,18 @@ router.post(
   (req, res, next) => courseController.CreateLesson(req, res, next)
 );
 
+router.put(
+  '/UpdateCourseSection/:sectionId',
+  AuthorizeRoles('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR', 'CONTENT_MANAGER'),
+  (req, res, next) => courseController.UpdateCourseSection(req, res, next)
+);
+
+router.put(
+  '/UpdateLesson/:lessonId',
+  AuthorizeRoles('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR', 'CONTENT_MANAGER'),
+  (req, res, next) => courseController.UpdateLesson(req, res, next)
+);
+
 router.post(
   '/UploadCourseThumbnail/:courseId',
   AuthorizeRoles('ORGANIZATION_OWNER', 'ORGANIZATION_ADMIN', 'INSTRUCTOR'),

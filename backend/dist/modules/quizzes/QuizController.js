@@ -23,6 +23,29 @@ const CreateQuizSchema = zod_1.z.object({
     }))
         .optional(),
 });
+const UpdateQuizSchema = zod_1.z.object({
+    title: zod_1.z.string().min(2).optional(),
+    description: zod_1.z.string().optional(),
+    passingScorePercentage: zod_1.z.number().min(0).max(100).optional(),
+    timeLimitMinutes: zod_1.z.number().min(1).optional(),
+    maxAttempts: zod_1.z.number().min(1).optional(),
+});
+const QuizQuestionSchema = zod_1.z.object({
+    questionText: zod_1.z.string().min(1),
+    options: zod_1.z.array(zod_1.z.string()).min(2),
+    correctAnswer: zod_1.z.string().min(1),
+    explanation: zod_1.z.string().optional(),
+    points: zod_1.z.number().optional(),
+    orderIndex: zod_1.z.number().optional(),
+});
+const UpdateQuizQuestionSchema = zod_1.z.object({
+    questionText: zod_1.z.string().min(1).optional(),
+    options: zod_1.z.array(zod_1.z.string()).min(2).optional(),
+    correctAnswer: zod_1.z.string().min(1).optional(),
+    explanation: zod_1.z.string().optional(),
+    points: zod_1.z.number().optional(),
+    orderIndex: zod_1.z.number().optional(),
+});
 const SubmitQuizSchema = zod_1.z.object({
     quizId: zod_1.z.string().uuid(),
     answers: zod_1.z.record(zod_1.z.string()),
@@ -108,6 +131,53 @@ class QuizController {
                 throw ApiError_1.ApiError.badRequest('Attachment URL is required.');
             const result = await QuizService_1.quizService.DeleteQuizAttachment(orgId, quizId, attachmentUrl);
             res.json(ApiResponse_1.ApiResponse.success('Quiz attachment deleted successfully.', result));
+        }
+        catch (err) {
+            next(err);
+        }
+    }
+    async UpdateQuiz(req, res, next) {
+        try {
+            const orgId = req.organizationId;
+            const { quizId } = req.params;
+            const parsed = UpdateQuizSchema.parse(req.body);
+            const result = await QuizService_1.quizService.UpdateQuiz(orgId, quizId, parsed);
+            res.json(ApiResponse_1.ApiResponse.success('Quiz updated successfully.', result));
+        }
+        catch (err) {
+            next(err);
+        }
+    }
+    async AddQuizQuestion(req, res, next) {
+        try {
+            const orgId = req.organizationId;
+            const { quizId } = req.params;
+            const parsed = QuizQuestionSchema.parse(req.body);
+            const result = await QuizService_1.quizService.AddQuizQuestion(orgId, quizId, parsed);
+            res.status(201).json(ApiResponse_1.ApiResponse.success('Quiz question added successfully.', result));
+        }
+        catch (err) {
+            next(err);
+        }
+    }
+    async UpdateQuizQuestion(req, res, next) {
+        try {
+            const orgId = req.organizationId;
+            const { questionId } = req.params;
+            const parsed = UpdateQuizQuestionSchema.parse(req.body);
+            const result = await QuizService_1.quizService.UpdateQuizQuestion(orgId, questionId, parsed);
+            res.json(ApiResponse_1.ApiResponse.success('Quiz question updated successfully.', result));
+        }
+        catch (err) {
+            next(err);
+        }
+    }
+    async DeleteQuizQuestion(req, res, next) {
+        try {
+            const orgId = req.organizationId;
+            const { questionId } = req.params;
+            const result = await QuizService_1.quizService.DeleteQuizQuestion(orgId, questionId);
+            res.json(ApiResponse_1.ApiResponse.success('Quiz question deleted successfully.', result));
         }
         catch (err) {
             next(err);

@@ -25,6 +25,32 @@ const CreateQuizSchema = z.object({
     .optional(),
 });
 
+const UpdateQuizSchema = z.object({
+  title: z.string().min(2).optional(),
+  description: z.string().optional(),
+  passingScorePercentage: z.number().min(0).max(100).optional(),
+  timeLimitMinutes: z.number().min(1).optional(),
+  maxAttempts: z.number().min(1).optional(),
+});
+
+const QuizQuestionSchema = z.object({
+  questionText: z.string().min(1),
+  options: z.array(z.string()).min(2),
+  correctAnswer: z.string().min(1),
+  explanation: z.string().optional(),
+  points: z.number().optional(),
+  orderIndex: z.number().optional(),
+});
+
+const UpdateQuizQuestionSchema = z.object({
+  questionText: z.string().min(1).optional(),
+  options: z.array(z.string()).min(2).optional(),
+  correctAnswer: z.string().min(1).optional(),
+  explanation: z.string().optional(),
+  points: z.number().optional(),
+  orderIndex: z.number().optional(),
+});
+
 const SubmitQuizSchema = z.object({
   quizId: z.string().uuid(),
   answers: z.record(z.string()),
@@ -109,6 +135,53 @@ export class QuizController {
       if (!attachmentUrl) throw ApiError.badRequest('Attachment URL is required.');
       const result = await quizService.DeleteQuizAttachment(orgId, quizId, attachmentUrl);
       res.json(ApiResponse.success('Quiz attachment deleted successfully.', result));
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async UpdateQuiz(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const orgId = req.organizationId!;
+      const { quizId } = req.params;
+      const parsed = UpdateQuizSchema.parse(req.body);
+      const result = await quizService.UpdateQuiz(orgId, quizId, parsed);
+      res.json(ApiResponse.success('Quiz updated successfully.', result));
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async AddQuizQuestion(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const orgId = req.organizationId!;
+      const { quizId } = req.params;
+      const parsed = QuizQuestionSchema.parse(req.body);
+      const result = await quizService.AddQuizQuestion(orgId, quizId, parsed);
+      res.status(201).json(ApiResponse.success('Quiz question added successfully.', result));
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async UpdateQuizQuestion(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const orgId = req.organizationId!;
+      const { questionId } = req.params;
+      const parsed = UpdateQuizQuestionSchema.parse(req.body);
+      const result = await quizService.UpdateQuizQuestion(orgId, questionId, parsed);
+      res.json(ApiResponse.success('Quiz question updated successfully.', result));
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async DeleteQuizQuestion(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const orgId = req.organizationId!;
+      const { questionId } = req.params;
+      const result = await quizService.DeleteQuizQuestion(orgId, questionId);
+      res.json(ApiResponse.success('Quiz question deleted successfully.', result));
     } catch (err) {
       next(err);
     }

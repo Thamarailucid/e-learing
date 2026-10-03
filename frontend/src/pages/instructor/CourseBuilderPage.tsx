@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, Button, Modal, Form, Input, Select, InputNumber, message, Tag, Upload, Tooltip, Radio, Popconfirm } from 'antd';
-import { Plus, Video, FileText, HelpCircle, Check, ArrowLeft, UploadCloud, Clock, Image as ImageIcon, CheckCircle, Sparkles, Trash2, Paperclip, Download, Star } from 'lucide-react';
+import { Plus, Video, FileText, HelpCircle, Check, ArrowLeft, UploadCloud, Clock, Image as ImageIcon, CheckCircle, Sparkles, Trash2, Paperclip, Download, Star, Pencil } from 'lucide-react';
 import { ApiClient } from '../../services/api/ApiClient';
 import { RbaPageHeader } from '../../components/common/RbaPageHeader';
 import { RbaStatusBadge } from '../../components/common/RbaStatusBadge';
@@ -22,9 +22,16 @@ export const CourseBuilderPage: React.FC = () => {
 
   const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
   const [uploadingLessonVideoId, setUploadingLessonVideoId] = useState<string | null>(null);
-  const [previewLesson, setPreviewLesson] = useState<any>(null);
+  const [previewSelection, setPreviewSelection] = useState<{ type: 'MODULE' | 'LESSON'; data: any } | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   
+  const [editModuleModalOpen, setEditModuleModalOpen] = useState(false);
+  const [editingModule, setEditingModule] = useState<any>(null);
+  const [editLessonModalOpen, setEditLessonModalOpen] = useState(false);
+  const [editingLesson, setEditingLesson] = useState<any>(null);
+  const [quizQuestionsModalOpen, setQuizQuestionsModalOpen] = useState(false);
+  const [managingQuizContext, setManagingQuizContext] = useState<any>(null);
+
   // Attachment Manager State
   const [attachmentManagerModalOpen, setAttachmentManagerModalOpen] = useState(false);
   const [managingAttachmentLesson, setManagingAttachmentLesson] = useState<any | null>(null);
@@ -32,6 +39,9 @@ export const CourseBuilderPage: React.FC = () => {
   const [sectionForm] = Form.useForm();
   const [lessonForm] = Form.useForm();
   const [questionForm] = Form.useForm();
+  const [editModuleForm] = Form.useForm();
+  const [editLessonForm] = Form.useForm();
+  const [quizQuestionForm] = Form.useForm();
 
   // Local file & video source state for Add Lesson Modal
   const [selectedLessonFile, setSelectedLessonFile] = useState<File | null>(null);
@@ -72,15 +82,15 @@ export const CourseBuilderPage: React.FC = () => {
 
   // Auto-select first lesson for preview
   React.useEffect(() => {
-    if (course?.sections && !previewLesson) {
+    if (course?.sections && !previewSelection) {
       for (const section of course.sections) {
         if (section.lessons?.length > 0) {
-          setPreviewLesson(section.lessons[0]);
+          setPreviewSelection({ type: 'LESSON', data: section.lessons[0] });
           break;
         }
       }
     }
-  }, [course, previewLesson]);
+  }, [course, previewSelection]);
 
   // 2. Add Section Mutation
   const addSectionMutation = useMutation({
@@ -266,7 +276,7 @@ export const CourseBuilderPage: React.FC = () => {
     onSuccess: () => {
       message.success('Lesson deleted.');
       queryClient.invalidateQueries({ queryKey: ['course-details', courseId] });
-      setPreviewLesson(null);
+      setPreviewSelection(null);
     },
   });
 
@@ -292,6 +302,70 @@ export const CourseBuilderPage: React.FC = () => {
     },
     onError: (err: any) => {
       message.error(err.response?.data?.message || 'Failed to retry transcoding.');
+    },
+  });
+
+  // 12. Update Section Mutation
+  const updateSectionMutation = useMutation({
+    mutationFn: async (values: any) => {
+      return ApiClient.put(`/courses/UpdateCourseSection/${editingModule.id}`, {
+        title: values.title
+      });
+    },
+    onSuccess: () => {
+      message.success('Module title updated.');
+      queryClient.invalidateQueries({ queryKey: ['course-details', courseId] });
+      setEditModuleModalOpen(false);
+    },
+  });
+
+  // 13. Update Lesson Mutation
+  const updateLessonMutation = useMutation({
+    mutationFn: async (values: any) => {
+      return ApiClient.put(`/courses/UpdateLesson/${editingLesson.id}`, {
+        title: values.title,
+        videoDurationSeconds: values.videoDurationSeconds,
+        articleContent: values.articleContent
+      });
+    },
+    onSuccess: (data, variables) => {
+      message.success('Lesson updated.');
+      queryClient.invalidateQueries({ queryKey: ['course-details', courseId] });
+      setEditLessonModalOpen(false);
+      // update preview if editing current preview
+      if (previewSelection?.data?.id === editingLesson?.id) {
+        setPreviewSelection({ type: 'LESSON', data: { ...(previewSelection?.data || {}), ...variables } });
+      }
+    },
+  });
+
+  // Quiz Mutations
+  const addQuizQuestionMutation = useMutation({
+    mutationFn: async (values: any) => {
+      const options = [values.optionA, values.optionB, values.optionC, values.optionD].filter(Boolean);
+      const quizId = managingQuizContext?.quiz_id || managingQuizContext?.id;
+      return ApiClient.post(`/quizzes/AddQuizQuestion/${quizId}`, {
+        questionText: values.questionText,
+        options,
+        correctAnswer: values.correctAnswer,
+        explanation: values.explanation,
+        points: values.points || 1
+      });
+    },
+    onSuccess: () => {
+      message.success('Quiz question added.');
+      queryClient.invalidateQueries({ queryKey: ['course-details', courseId] });
+      quizQuestionForm.resetFields();
+    },
+  });
+
+  const deleteQuizQuestionMutation = useMutation({
+    mutationFn: async (questionId: string) => {
+      return ApiClient.delete(`/quizzes/DeleteQuizQuestion/${questionId}`);
+    },
+    onSuccess: () => {
+      message.success('Question deleted.');
+      queryClient.invalidateQueries({ queryKey: ['course-details', courseId] });
     },
   });
 
@@ -412,7 +486,7 @@ export const CourseBuilderPage: React.FC = () => {
           course?.sections?.map((section: any) => (
             <Card
               key={section.id}
-              title={<span className="font-semibold text-sm">{section.title}</span>}
+              title={<span className="font-semibold text-sm cursor-pointer hover:text-indigo-600 transition-colors" onClick={() => setPreviewSelection({ type: 'MODULE', data: section })}>{section.title}</span>}
               extra={
                 <div className="flex gap-2 items-center">
                   <Button
@@ -426,6 +500,7 @@ export const CourseBuilderPage: React.FC = () => {
                   >
                     Add Lesson
                   </Button>
+                  <Button size="small" type="text" icon={<Pencil className="w-3.5 h-3.5" />} onClick={(e) => { e.stopPropagation(); setEditingModule(section); editModuleForm.setFieldsValue(section); setEditModuleModalOpen(true); }} />
                   <Popconfirm title="Delete Module Section" description="Are you sure? This will permanently delete this module and all lessons within it." onConfirm={() => deleteSectionMutation.mutate(section.id)} okText="Delete" cancelText="Cancel" okButtonProps={{ danger: true }}>
                     <Button size="small" type="text" danger icon={<Trash2 className="w-3.5 h-3.5" />}>Delete Module</Button>
                   </Popconfirm>
@@ -440,8 +515,8 @@ export const CourseBuilderPage: React.FC = () => {
                   {section.lessons?.map((lesson: any) => (
                     <div
                       key={lesson.id}
-                      className={`p-3 bg-gray-50 rounded-lg flex items-center justify-between border transition-colors cursor-pointer ${previewLesson?.id === lesson.id ? 'border-indigo-400 bg-indigo-50/30 shadow-sm' : 'border-gray-100 hover:border-gray-300'}`}
-                      onClick={() => setPreviewLesson(lesson)}
+                      className={`p-3 bg-gray-50 rounded-lg flex items-center justify-between border transition-colors cursor-pointer ${previewSelection?.data?.id === lesson.id ? 'border-indigo-400 bg-indigo-50/30 shadow-sm' : 'border-gray-100 hover:border-gray-300'}`}
+                      onClick={() => setPreviewSelection({ type: 'LESSON', data: lesson })}
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-7 h-7 rounded bg-white flex items-center justify-center text-gray-600 shadow-2xs">
@@ -620,7 +695,8 @@ export const CourseBuilderPage: React.FC = () => {
                               </Button>
                             </div>
                         )}
-                        <div onClick={(e) => e.stopPropagation()}>
+                        <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1">
+                          <Button size="small" type="text" icon={<Pencil className="w-3.5 h-3.5 text-blue-500" />} onClick={(e) => { e.stopPropagation(); setEditingLesson(lesson); editLessonForm.setFieldsValue(lesson); setEditLessonModalOpen(true); }} />
                           <Popconfirm title="Delete Lesson" description="Are you sure you want to delete this lesson?" onConfirm={() => deleteLessonMutation.mutate(lesson.id)} okText="Delete" cancelText="Cancel" okButtonProps={{ danger: true }}>
                             <Button size="small" type="text" danger icon={<Trash2 className="w-3.5 h-3.5 text-rose-500" />} />
                           </Popconfirm>
@@ -635,28 +711,95 @@ export const CourseBuilderPage: React.FC = () => {
         )}
         </div>
 
-        {/* Video Preview Right Column */}
+        
+        {/* Universal Preview Studio Right Column */}
         <div className="lg:col-span-1">
           <Card 
-            title={<span className="text-sm font-semibold text-gray-800">Lesson Preview & Resources</span>} 
+            title={<span className="text-sm font-semibold text-gray-800">Universal Preview Studio</span>} 
             className="!rounded-xl sticky top-6 border-[#e5e5e5]"
             bodyStyle={{ padding: '16px' }}
           >
-            {previewLesson ? (
+            {!previewSelection ? (
+              <div className="bg-gray-50 rounded-lg p-6 text-center text-gray-500 text-xs border border-dashed border-gray-200">
+                Select a module or lesson from the curriculum list to preview its contents.
+              </div>
+            ) : previewSelection.type === 'MODULE' ? (
               <div className="space-y-4">
-                <div className="text-xs font-semibold text-indigo-700 bg-indigo-50 p-2 rounded border border-indigo-100">
-                  {previewLesson.title}
+                <div className="text-sm font-bold text-gray-800 border-b border-gray-100 pb-2">
+                  {previewSelection.data.title}
                 </div>
-                {previewLesson.video_url ? (
-                  <video 
-                    key={previewLesson.id}
-                    controls 
-                    className="w-full rounded-lg bg-black aspect-video object-contain mb-4"
-                    src={previewLesson.video_url}
-                  />
-                ) : (
-                  <div className="bg-gray-50 rounded-lg p-6 text-center text-gray-500 text-xs border border-dashed border-gray-300 mb-4">
-                    No video uploaded for this lesson yet.
+                <div className="text-xs text-gray-600">
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="font-semibold text-indigo-700 text-lg">{previewSelection.data.lessons?.length || 0}</div>
+                      <div className="text-gray-500">Total Lessons</div>
+                    </div>
+                    <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="font-semibold text-emerald-700 text-lg">
+                        {Math.floor((previewSelection.data.lessons?.reduce((acc: any, l: any) => acc + (l.video_duration_seconds || 0), 0) || 0) / 60)}
+                      </div>
+                      <div className="text-gray-500">Video Minutes</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-purple-50 p-3 rounded-lg border border-purple-100">
+                  <div className="flex items-center gap-2 mb-1 text-purple-800 font-semibold text-xs">
+                    <HelpCircle className="w-3.5 h-3.5" /> Module Quiz Status
+                  </div>
+                  <div className="text-xs text-purple-600">
+                    {previewSelection.data.lessons?.filter((l: any) => l.content_type === 'QUIZ')?.length > 0 
+                      ? 'Quiz active (3 Questions • 1 Try)'
+                      : 'No quiz assigned to this module.'}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="text-xs font-semibold text-indigo-700 bg-indigo-50 p-2 rounded border border-indigo-100 flex items-center justify-between">
+                  <span>{previewSelection.data.title}</span>
+                  <span className="text-gray-500 font-normal">{previewSelection.data.content_type}</span>
+                </div>
+                
+                {previewSelection.data.content_type === 'VIDEO' && (
+                  <div>
+                    {previewSelection.data.video_url ? (
+                      <video 
+                        key={previewSelection.data.id}
+                        controls 
+                        className="w-full rounded-lg bg-black aspect-video object-contain mb-4"
+                        src={previewSelection.data.video_url}
+                      />
+                    ) : (
+                      <div className="bg-gray-50 rounded-lg p-6 text-center text-gray-500 text-xs border border-dashed border-gray-300 mb-4">
+                        No video uploaded for this lesson yet.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {previewSelection.data.content_type === 'ARTICLE' && (
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 mb-4 max-h-[300px] overflow-y-auto text-xs text-gray-700">
+                    {previewSelection.data.article_content || 'No article content provided.'}
+                  </div>
+                )}
+
+                {previewSelection.data.content_type === 'QUIZ' && (
+                  <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
+                    <div className="flex items-center justify-between mb-3 border-b border-gray-100 pb-2">
+                      <div className="font-semibold text-xs text-purple-700 flex items-center gap-1.5">
+                        <HelpCircle className="w-3.5 h-3.5" />
+                        Interactive Quiz Preview
+                      </div>
+                      <Button size="small" type="primary" onClick={() => {
+                        setManagingQuizContext(previewSelection.data);
+                        setQuizQuestionsModalOpen(true);
+                      }}>
+                        Manage Questions
+                      </Button>
+                    </div>
+                    <div className="text-[11px] text-gray-500 text-center py-4 bg-gray-50 rounded border border-dashed border-gray-200">
+                      Click 'Manage Questions' to view, add, or edit the questions for this assessment.
+                    </div>
                   </div>
                 )}
                 
@@ -673,7 +816,7 @@ export const CourseBuilderPage: React.FC = () => {
                       icon={<Plus className="w-3 h-3" />}
                       className="text-[11px] font-medium"
                       onClick={() => {
-                        setManagingAttachmentLesson(previewLesson);
+                        setManagingAttachmentLesson(previewSelection.data);
                         setAttachmentManagerModalOpen(true);
                       }}
                     >
@@ -681,13 +824,13 @@ export const CourseBuilderPage: React.FC = () => {
                     </Button>
                   </div>
                   
-                  {!previewLesson.attachments || previewLesson.attachments.length === 0 ? (
+                  {!previewSelection.data.attachments || previewSelection.data.attachments.length === 0 ? (
                     <div className="text-[11px] text-gray-400 text-center py-3 bg-gray-50 rounded-lg border border-gray-100">
                       No resources attached.
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      {previewLesson.attachments.map((att: any, idx: number) => (
+                      {previewSelection.data.attachments.map((att: any, idx: number) => (
                         <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 border border-gray-200 rounded-lg hover:border-indigo-200 transition-colors group">
                           <div className="flex items-center gap-2 overflow-hidden">
                             <Paperclip className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
@@ -714,10 +857,6 @@ export const CourseBuilderPage: React.FC = () => {
                     </div>
                   )}
                 </div>
-              </div>
-            ) : (
-              <div className="bg-gray-50 rounded-lg p-6 text-center text-gray-500 text-xs border border-dashed border-gray-200">
-                Click a lesson from the curriculum list to preview its video and attachments here.
               </div>
             )}
           </Card>
@@ -1125,6 +1264,136 @@ export const CourseBuilderPage: React.FC = () => {
                 </div>
               );
             })
+          )}
+        </div>
+      </Modal>
+
+            {/* Edit Module Modal */}
+      <Modal
+        title="Edit Module Title"
+        open={editModuleModalOpen}
+        onCancel={() => {
+          setEditModuleModalOpen(false);
+          setEditingModule(null);
+        }}
+        onOk={() => editModuleForm.validateFields().then((v) => updateSectionMutation.mutate(v))}
+        confirmLoading={updateSectionMutation.isPending}
+      >
+        <Form form={editModuleForm} layout="vertical">
+          <Form.Item name="title" label="Section Title" rules={[{ required: true }]}>
+            <Input placeholder="e.g. Module 1: Foundational Core" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Edit Lesson Modal */}
+      <Modal
+        title="Edit Lesson"
+        open={editLessonModalOpen}
+        onCancel={() => {
+          setEditLessonModalOpen(false);
+          setEditingLesson(null);
+        }}
+        onOk={() => editLessonForm.validateFields().then((v) => updateLessonMutation.mutate(v))}
+        confirmLoading={updateLessonMutation.isPending}
+      >
+        <Form form={editLessonForm} layout="vertical">
+          <Form.Item name="title" label="Lesson Title" rules={[{ required: true }]}>
+            <Input placeholder="Lesson Title" />
+          </Form.Item>
+          {editingLesson?.content_type === 'ARTICLE' && (
+            <Form.Item name="articleContent" label="Article Content" rules={[{ required: true }]}>
+              <Input.TextArea rows={4} />
+            </Form.Item>
+          )}
+          <Form.Item name="videoDurationSeconds" label="Estimated Duration (seconds)">
+            <InputNumber min={10} max={10800} className="w-full" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Quiz Questions Modal */}
+      <Modal
+        title={
+          <div className="flex flex-col">
+            <span>Manage Quiz Questions</span>
+            <span className="text-xs text-gray-500 font-normal mt-0.5">
+              {managingQuizContext?.title?.toLowerCase().includes('final') 
+                ? 'Final Course Exam (10-12 Questions • 80% Cut-off • Unlimited Tries)' 
+                : 'Module Quiz (3 Questions • 1 Try Only)'}
+            </span>
+          </div>
+        }
+        open={quizQuestionsModalOpen}
+        onCancel={() => {
+          setQuizQuestionsModalOpen(false);
+          setManagingQuizContext(null);
+        }}
+        footer={null}
+        width={700}
+      >
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
+          <h4 className="font-semibold text-sm mb-3">Add New Question</h4>
+          <Form form={quizQuestionForm} layout="vertical" onFinish={(values) => addQuizQuestionMutation.mutate(values)}>
+            <Form.Item name="questionText" label="Question" rules={[{ required: true }]}>
+              <Input.TextArea rows={2} />
+            </Form.Item>
+            <div className="grid grid-cols-2 gap-3">
+              <Form.Item name="optionA" label="Option A" rules={[{ required: true }]}><Input /></Form.Item>
+              <Form.Item name="optionB" label="Option B" rules={[{ required: true }]}><Input /></Form.Item>
+              <Form.Item name="optionC" label="Option C"><Input /></Form.Item>
+              <Form.Item name="optionD" label="Option D"><Input /></Form.Item>
+            </div>
+            <Form.Item name="correctAnswer" label="Correct Answer (Exact Match)" rules={[{ required: true }]}>
+              <Input />
+            </Form.Item>
+            <Form.Item name="explanation" label="Explanation">
+              <Input />
+            </Form.Item>
+            <Button type="primary" htmlType="submit" loading={addQuizQuestionMutation.isPending}>
+              Add Question
+            </Button>
+          </Form>
+        </div>
+
+        <div>
+          <h4 className="font-semibold text-sm mb-3">Existing Questions</h4>
+          {!managingQuizContext?.questions || managingQuizContext.questions.length === 0 ? (
+            <div className="text-gray-500 text-xs text-center py-4 border border-dashed rounded bg-gray-50">
+              No questions added yet.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {managingQuizContext.questions.map((q: any, i: number) => (
+                <div key={q.id || i} className="p-3 border border-gray-200 rounded-lg relative group">
+                  <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button size="small" type="text" icon={<Pencil className="w-3.5 h-3.5 text-blue-500" />} />
+                    <Popconfirm title="Delete question?" onConfirm={() => deleteQuizQuestionMutation.mutate(q.id)} okButtonProps={{ danger: true }}>
+                      <Button size="small" type="text" danger icon={<Trash2 className="w-3.5 h-3.5" />} />
+                    </Popconfirm>
+                  </div>
+                  <div className="font-medium text-sm mb-2 pr-16">{i + 1}. {q.question_text || q.questionText}</div>
+                  <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 mb-2">
+                    {(q.options || []).map((opt: string, j: number) => (
+                      <div key={j} className="flex items-center gap-1.5">
+                        <span className="font-semibold bg-gray-100 w-5 h-5 flex items-center justify-center rounded">
+                          {String.fromCharCode(65 + j)}
+                        </span>
+                        {opt}
+                        {opt === (q.correct_answer || q.correctAnswer) && (
+                          <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {(q.explanation) && (
+                    <div className="text-[11px] text-gray-500 bg-emerald-50 p-2 rounded border border-emerald-100 mt-2">
+                      <span className="font-semibold">Explanation:</span> {q.explanation}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </Modal>

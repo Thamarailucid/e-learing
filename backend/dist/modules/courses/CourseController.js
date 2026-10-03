@@ -27,7 +27,21 @@ const CreateLessonSchema = zod_1.z.object({
     courseId: zod_1.z.string().uuid(),
     sectionId: zod_1.z.string().uuid(),
     title: zod_1.z.string().min(1, 'Lesson title is required.'),
-    contentType: zod_1.z.enum(['VIDEO', 'DOCUMENT', 'ARTICLE']).optional(),
+    contentType: zod_1.z.enum(['VIDEO', 'DOCUMENT', 'ARTICLE', 'QUIZ']).optional(),
+    videoUrl: zod_1.z.string().optional(),
+    videoDurationSeconds: zod_1.z.number().optional(),
+    articleContent: zod_1.z.string().optional(),
+    documentUrl: zod_1.z.string().optional(),
+    orderIndex: zod_1.z.number().optional(),
+    isFreePreview: zod_1.z.boolean().optional(),
+});
+const UpdateSectionSchema = zod_1.z.object({
+    title: zod_1.z.string().min(1, 'Section title is required.'),
+    orderIndex: zod_1.z.number().optional(),
+});
+const UpdateLessonSchema = zod_1.z.object({
+    title: zod_1.z.string().min(1, 'Lesson title is required.').optional(),
+    contentType: zod_1.z.enum(['VIDEO', 'DOCUMENT', 'ARTICLE', 'QUIZ']).optional(),
     videoUrl: zod_1.z.string().optional(),
     videoDurationSeconds: zod_1.z.number().optional(),
     articleContent: zod_1.z.string().optional(),
@@ -134,12 +148,36 @@ class CourseController {
             next(err);
         }
     }
+    async UpdateCourseSection(req, res, next) {
+        try {
+            const orgId = req.organizationId;
+            const { sectionId } = req.params;
+            const parsed = UpdateSectionSchema.parse(req.body);
+            const result = await CourseService_1.courseService.UpdateCourseSection(orgId, sectionId, parsed.title, parsed.orderIndex);
+            res.json(ApiResponse_1.ApiResponse.success('Course section updated successfully.', result));
+        }
+        catch (err) {
+            next(err);
+        }
+    }
     async CreateLesson(req, res, next) {
         try {
             const orgId = req.organizationId;
             const parsed = CreateLessonSchema.parse(req.body);
             const result = await CourseService_1.courseService.CreateLesson(orgId, parsed.courseId, parsed.sectionId, parsed);
             res.status(201).json(ApiResponse_1.ApiResponse.success('Lesson created successfully.', result));
+        }
+        catch (err) {
+            next(err);
+        }
+    }
+    async UpdateLesson(req, res, next) {
+        try {
+            const orgId = req.organizationId;
+            const { lessonId } = req.params;
+            const parsed = UpdateLessonSchema.parse(req.body);
+            const result = await CourseService_1.courseService.UpdateLesson(orgId, lessonId, parsed);
+            res.json(ApiResponse_1.ApiResponse.success('Lesson updated successfully.', result));
         }
         catch (err) {
             next(err);
